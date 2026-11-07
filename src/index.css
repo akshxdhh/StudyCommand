@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root, [data-theme="light"] {
+    --c-bg: 243 240 232;
+    --c-surface: 251 250 246;
+    --c-ink: 26 25 22;
+    --c-onink: 251 250 246;
+    --c-muted: 103 98 79;
+    --c-line: 221 215 200;
+    --c-line2: 181 174 154;
+    --c-hover: 234 229 216;
+    --c-live: 30 122 69;
+    --c-accent: 124 58 237;          /* Violet 600 */
+    --c-accent-secondary: 8 145 178; /* Cyan 600 */
+    --c-danger: 180 35 24;
+    --c-warn: 146 64 14;
+    --shadow: 0 1px 2px rgba(26, 25, 22, 0.05), 0 8px 24px -12px rgba(26, 25, 22, 0.12);
+    --radius-component: 14px;
+    --radius-card: 18px;
+    color-scheme: light;
+  }
+
+  [data-theme="dark"] {
+    --c-bg: 17 17 15;
+    --c-surface: 26 26 23;
+    --c-ink: 241 238 229;
+    --c-onink: 17 17 15;
+    --c-muted: 168 163 149;
+    --c-line: 47 46 41;
+    --c-line2: 74 72 63;
+    --c-hover: 38 37 32;
+    --c-live: 74 222 128;
+    --c-accent: 167 139 250;         /* Violet 400 */
+    --c-accent-secondary: 0 240 255; /* Cyan */
+    --c-danger: 251 113 133;
+    --c-warn: 251 191 36;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.65);
+    --radius-component: 14px;
+    --radius-card: 18px;
+    color-scheme: dark;
+  }
+
+  * {
+    box-sizing: border-box;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.1s ease;
+  }
+
+  body {
+    background-color: rgb(var(--c-bg));
+    color: rgb(var(--c-ink));
+    overflow: hidden;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Custom refined scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: rgb(var(--c-line2) / 0.5);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--c-accent));
+  }
+}
+
+.card-kopy {
+  background: rgb(var(--c-surface));
+  border: 1px solid rgb(var(--c-line));
+  box-shadow: var(--shadow);
+  border-radius: var(--radius-card);
+}
+
+.input-kopy {
+  background: rgb(var(--c-bg));
+  border: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-ink));
+  border-radius: var(--radius-component);
+}
+
+.input-kopy:focus {
+  border-color: rgb(var(--c-accent));
+  outline: none;
+}

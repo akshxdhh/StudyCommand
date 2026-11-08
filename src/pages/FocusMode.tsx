@@ -317,6 +317,37 @@ export const FocusMode: React.FC = () => {
     }
   };
 
+  // Keyboard shortcuts for focus sprint (Space = Play/Pause, R = Reset, S = Skip)
+  useEffect(() => {
+    const handleTimerHotkeys = (e: KeyboardEvent) => {
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+        return;
+      }
+
+      if (screenView === 'ACTIVE_TIMER') {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          if (isActive) {
+            handlePause();
+          } else {
+            handleResume();
+          }
+        } else if (e.key.toLowerCase() === 'r') {
+          e.preventDefault();
+          handleReset();
+        } else if (e.key.toLowerCase() === 's') {
+          e.preventDefault();
+          handleSkip();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleTimerHotkeys);
+    return () => window.removeEventListener('keydown', handleTimerHotkeys);
+  }, [screenView, isActive, remainingSeconds]);
+
+
   // Copy Prompt to Clipboard
   const handleCopyPrompt = async () => {
     try {

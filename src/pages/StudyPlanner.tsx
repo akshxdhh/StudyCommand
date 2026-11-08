@@ -508,13 +508,16 @@ export const StudyPlanner: React.FC = () => {
                                   onClick={() => {
                                     startFocusSessionWithPreload({
                                       subjectId: currentSubject.id,
+                                      moduleId: mod.id,
+                                      topicId: topic.id,
                                       topicTitle: topic.title,
                                     });
                                   }}
-                                  className="p-1 rounded-component hover:bg-app-hover text-app-accent"
-                                  title="Launch Focus Session for Topic"
+                                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-component bg-app-accent/15 hover:bg-app-accent/25 text-app-accent border border-app-accent/30 text-[11px] font-semibold transition-all hover:scale-[1.02] shadow-sm"
+                                  title="Start Topic-Aware Focus Session with AI Study Prompt"
                                 >
                                   <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Start Focus</span>
                                 </button>
 
                                 {/* Edit Button */}

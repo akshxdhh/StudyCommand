@@ -215,6 +215,8 @@ export const Dashboard: React.FC = () => {
               onClick={() => {
                 startFocusSessionWithPreload({
                   subjectId: recommendations.nextTopic?.subject.id,
+                  moduleId: recommendations.nextTopic?.module.id,
+                  topicId: recommendations.nextTopic?.topic.id,
                   topicTitle: recommendations.nextTopic?.topic.title,
                 });
               }}

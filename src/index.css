@@ -4,20 +4,20 @@
 
 @layer base {
   :root, [data-theme="light"] {
-    --c-bg: 243 240 232;
-    --c-surface: 251 250 246;
-    --c-ink: 26 25 22;
-    --c-onink: 251 250 246;
-    --c-muted: 103 98 79;
-    --c-line: 221 215 200;
-    --c-line2: 181 174 154;
-    --c-hover: 234 229 216;
-    --c-live: 30 122 69;
+    --c-bg: 248 249 251;             /* Clean crisp soft slate-zinc canvas */
+    --c-surface: 255 255 255;        /* Pristine, clean white card surfaces - eliminates grey cards */
+    --c-ink: 15 23 42;               /* Deep Slate-900: razor-sharp dark text */
+    --c-onink: 255 255 255;
+    --c-muted: 71 85 105;            /* Slate-600: high-contrast readable subtitles */
+    --c-line: 226 232 240;           /* Slate-200: crisp clean modern borders */
+    --c-line2: 203 213 225;          /* Slate-300: active borders & dividers */
+    --c-hover: 241 245 249;          /* Slate-100: interactive hover state */
+    --c-live: 22 101 52;             /* Deep Emerald-800 for high-contrast success */
     --c-accent: 124 58 237;          /* Violet 600 */
-    --c-accent-secondary: 8 145 178; /* Cyan 600 */
-    --c-danger: 180 35 24;
-    --c-warn: 146 64 14;
-    --shadow: 0 1px 2px rgba(26, 25, 22, 0.05), 0 8px 24px -12px rgba(26, 25, 22, 0.12);
+    --c-accent-secondary: 2 132 199; /* Sky 600 */
+    --c-danger: 225 29 72;           /* Rose 600 */
+    --c-warn: 180 83 9;              /* Amber 700 */
+    --shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.05), 0 4px 16px -2px rgba(15, 23, 42, 0.06);
     --radius-component: 14px;
     --radius-card: 18px;
     color-scheme: light;
@@ -67,7 +67,7 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: rgb(var(--c-line2) / 0.5);
+    background: rgb(var(--c-line2) / 0.6);
     border-radius: 9999px;
   }
 
@@ -84,7 +84,7 @@
 }
 
 .input-kopy {
-  background: rgb(var(--c-bg));
+  background: rgb(var(--c-surface));
   border: 1px solid rgb(var(--c-line));
   color: rgb(var(--c-ink));
   border-radius: var(--radius-component);
@@ -93,4 +93,20 @@
 .input-kopy:focus {
   border-color: rgb(var(--c-accent));
   outline: none;
+  box-shadow: 0 0 0 2px rgb(var(--c-accent) / 0.2);
+}
+
+select {
+  background-color: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
+}
+
+option {
+  background-color: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
+}
+
+textarea {
+  background-color: rgb(var(--c-surface));
+  color: rgb(var(--c-ink));
 }

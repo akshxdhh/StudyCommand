@@ -270,6 +270,10 @@ function setupIPC(): void {
   ipcMain.handle('app:openPath', async (_event, targetPath: string) => {
     try {
       if (!targetPath) return false;
+      if (targetPath.startsWith('http://') || targetPath.startsWith('https://')) {
+        await shell.openExternal(targetPath);
+        return true;
+      }
       let resolved = targetPath;
       if (!path.isAbsolute(targetPath)) {
         resolved = path.resolve(process.cwd(), targetPath);
@@ -293,6 +297,19 @@ function setupIPC(): void {
       return false;
     } catch (err) {
       console.error('Failed to open path:', err);
+      return false;
+    }
+  });
+
+
+
+  ipcMain.handle('app:openExternal', async (_event, url: string) => {
+    try {
+      if (!url) return false;
+      await shell.openExternal(url);
+      return true;
+    } catch (err) {
+      console.error('Failed to open external url:', err);
       return false;
     }
   });

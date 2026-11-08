@@ -87,6 +87,8 @@ export interface FocusSessionLog {
   durationMinutes: number;
   subjectId?: string;
   subjectCode?: string;
+  moduleId?: string;
+  topicId?: string;
   topicTitle?: string;
   completed: boolean;
 }
@@ -148,6 +150,7 @@ export interface ElectronAPI {
   setStartupSetting: (enable: boolean) => Promise<boolean>;
   getStartupSetting: () => Promise<boolean>;
   openPath?: (targetPath: string) => Promise<boolean>;
+  openExternal?: (url: string) => Promise<boolean>;
   minimizeWindow: () => void;
   maximizeWindow: () => void;
   closeWindow: () => void;

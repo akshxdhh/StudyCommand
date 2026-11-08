@@ -181,7 +181,7 @@ export const Settings: React.FC = () => {
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { mode: 'dark' as ThemeMode, label: 'Dark Mode', icon: Moon, desc: 'Deep charcoal background & violet accents' },
-                  { mode: 'light' as ThemeMode, label: 'Light Mode', icon: Sun, desc: 'Soft warm linen & crisp readable text' },
+                  { mode: 'light' as ThemeMode, label: 'Light Mode', icon: Sun, desc: 'Crisp white cards, high contrast & clean slate canvas' },
                   { mode: 'system' as ThemeMode, label: 'System Default', icon: Laptop, desc: 'Follows your Windows OS appearance' },
                 ].map(({ mode, label, icon: Icon, desc }) => {
                   const isSelected = appearance.themeMode === mode;

@@ -18,8 +18,10 @@ import { soundSynth } from '../utils/audio';
 import { applyTheme } from '../utils/theme';
 import { generateSmartRecommendations, SmartRecommendation } from '../utils/recommendations';
 
-interface FocusPreload {
+export interface FocusPreload {
   subjectId?: string;
+  moduleId?: string;
+  topicId?: string;
   topicTitle?: string;
   slotId?: string;
   recordId?: string;

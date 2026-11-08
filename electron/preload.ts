@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setStartupSetting: (enable: boolean): Promise<boolean> => ipcRenderer.invoke('app:setStartup', enable),
   getStartupSetting: (): Promise<boolean> => ipcRenderer.invoke('app:getStartup'),
   openPath: (targetPath: string): Promise<boolean> => ipcRenderer.invoke('app:openPath', targetPath),
+  openExternal: (url: string): Promise<boolean> => ipcRenderer.invoke('app:openExternal', url),
 
   minimizeWindow: (): void => ipcRenderer.send('window:minimize'),
   maximizeWindow: (): void => ipcRenderer.send('window:maximize'),

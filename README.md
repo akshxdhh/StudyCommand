@@ -131,3 +131,8 @@ study-command/
 | `npm run build` | Compiles Vite React renderer and Electron TypeScript main/preload scripts |
 | `npm run dist` | Builds production artifacts and generates the Windows NSIS installer `.exe` |
 | `npm run dist:dir` | Generates the unpacked Windows executable inside `release/win-unpacked/` |
+
+## Acknowledgements
+
+Built with assistance from **[ChatGPT](https://chatgpt.com/)** and **[Google Antigravity](https://antigravity.google/)**.
+**Made with curiosity, code, and AI.**

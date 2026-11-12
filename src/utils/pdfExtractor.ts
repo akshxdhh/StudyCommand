@@ -1,15 +1,17 @@
-import { Subject, Exam, Module, Topic } from '../types';
+import { Subject, Exam, Module, Topic, TimetableSlot } from '../types';
 
 export interface ExtractedTopicCandidate {
   title: string;
   priority: 'HIGH' | 'MEDIUM' | 'LOW';
   subtopics?: string[];
+  selected?: boolean;
 }
 
 export interface ExtractedModuleCandidate {
   moduleNumber: number;
   name: string;
   topics: ExtractedTopicCandidate[];
+  selected?: boolean;
 }
 
 export interface ExtractedSubjectCandidate {
@@ -20,6 +22,8 @@ export interface ExtractedSubjectCandidate {
   credits: number;
   color: string;
   modules: ExtractedModuleCandidate[];
+  selected?: boolean;
+  isDuplicate?: boolean;
 }
 
 export interface ExtractedExamCandidate {
@@ -28,33 +32,68 @@ export interface ExtractedExamCandidate {
   date: string; // ISO string e.g. "2026-11-23T09:30:00"
   session?: string; // "FN" | "AN"
   isLab?: boolean;
+  selected?: boolean;
+  isDuplicate?: boolean;
+}
+
+export interface ExtractedScheduleSlotCandidate {
+  label: string;
+  startTime: string; // "HH:MM"
+  endTime: string;   // "HH:MM"
+  type: 'STUDY' | 'BREAK' | 'LUNCH' | 'FREE';
+  selected?: boolean;
 }
 
 export interface ExtractedPdfPayload {
   filename: string;
   numpages?: number;
-  detectedType: 'SYLLABUS' | 'TIMETABLE' | 'MIXED';
+  detectedType: 'SYLLABUS' | 'TIMETABLE' | 'SCHEDULE' | 'MIXED';
   rawTextPreview: string;
+  isScanned?: boolean;
+  warning?: string;
   subjects: ExtractedSubjectCandidate[];
   exams: ExtractedExamCandidate[];
+  scheduleSlots?: ExtractedScheduleSlotCandidate[];
 }
 
 const PALETTE = ['#00f0ff', '#8b5cf6', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#14b8a6', '#6366f1'];
 
 export function parsePdfText(rawText: string, filename: string = 'Document.pdf'): ExtractedPdfPayload {
-  const lines = rawText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const trimmed = rawText ? rawText.trim() : '';
+  const isScanned = trimmed.length < 50;
+
+  if (isScanned) {
+    return {
+      filename,
+      detectedType: 'SYLLABUS',
+      rawTextPreview: trimmed,
+      isScanned: true,
+      warning: 'This appears to be a scanned document or image-only PDF with minimal text. Please import a digital text-based PDF or add subjects manually.',
+      subjects: [],
+      exams: [],
+      scheduleSlots: [],
+    };
+  }
+
+  const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const subjects: ExtractedSubjectCandidate[] = [];
   const exams: ExtractedExamCandidate[] = [];
+  const scheduleSlots: ExtractedScheduleSlotCandidate[] = [];
 
-  // 1. Detect if it's an Exam Timetable
+  // 1. Detect if it's an Exam Timetable or Daily Schedule
   const isTimetable = /timetable|time\s*table|schedule\s*of\s*examinations|date\s*sheet/i.test(rawText);
 
   // Parse Timetable items: dates followed by subject code / subject name
   const dateRegex = /(\d{1,2})[-/. ](\d{1,2}|[A-Za-z]{3,9})[-/. ](\d{2,4})/;
   const courseCodeRegex = /\b([A-Z]{3,5}\s*\d{2,4}[A-Z]?)\b/;
 
+  // Parse Routine/Schedule time slots: e.g. "09:00 - 10:30" or "9:00 to 10:30"
+  const timeSlotRegex = /(\d{1,2}[:.]\d{2})\s*(?:-|to|–)\s*(\d{1,2}[:.]\d{2})/i;
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+
+    // Exam Timetable line check
     const dateMatch = line.match(dateRegex);
     const codeMatch = line.match(courseCodeRegex);
 
@@ -73,12 +112,31 @@ export function parsePdfText(rawText: string, filename: string = 'Document.pdf')
         date: dateStr,
         session: /AN|Afternoon|2:00|1:30|14:00/i.test(line) ? 'AN' : 'FN',
         isLab: /lab|practical|viva/i.test(line + ' ' + subjectName),
+        selected: true,
+      });
+    }
+
+    // Daily Schedule line check
+    const timeMatch = line.match(timeSlotRegex);
+    if (timeMatch) {
+      const start = normalizeTime(timeMatch[1]);
+      const end = normalizeTime(timeMatch[2]);
+      let label = line.replace(timeMatch[0], '').replace(/[-–:,|]/g, '').trim();
+      if (!label) label = `Study Session ${scheduleSlots.length + 1}`;
+      const isLunch = /lunch|dinner|meal/i.test(label);
+      const isBreak = /break|recess|tea/i.test(label);
+
+      scheduleSlots.push({
+        label,
+        startTime: start,
+        endTime: end,
+        type: isLunch ? 'LUNCH' : isBreak ? 'BREAK' : 'STUDY',
+        selected: true,
       });
     }
   }
 
   // 2. Parse Syllabus: Detect Subjects, Modules, Topics
-  // Look for Course Code & Name
   let currentCourseCode = '';
   let currentCourseName = '';
 
@@ -121,7 +179,6 @@ export function parsePdfText(rawText: string, filename: string = 'Document.pdf')
       activeModule = { num, title, lines: [] };
       moduleBlocks.push(activeModule);
     } else if (activeModule) {
-      // Exclude references, questions, or headers
       if (/^(Text\s*Books?|References?|Course\s*Outcomes?|Question\s*Paper)/i.test(line)) {
         activeModule = null;
       } else {
@@ -137,13 +194,15 @@ export function parsePdfText(rawText: string, filename: string = 'Document.pdf')
       return {
         moduleNumber: mb.num,
         name: `Module ${mb.num}: ${mb.title}`,
-        topics: rawTopics.length > 0 ? rawTopics : [
+        selected: true,
+        topics: (rawTopics.length > 0 ? rawTopics : [
           {
             title: mb.title,
             priority: 'HIGH' as const,
             subtopics: mb.lines.slice(0, 3),
+            selected: true,
           },
-        ],
+        ]).map((t) => ({ ...t, selected: true })),
       };
     });
 
@@ -155,9 +214,10 @@ export function parsePdfText(rawText: string, filename: string = 'Document.pdf')
       credits: 4,
       color: PALETTE[subjects.length % PALETTE.length],
       modules,
+      selected: true,
     });
   } else if (!isTimetable && lines.length > 5) {
-    // Fallback: create 1 subject with synthesized modules if raw text contains readable chunks
+    // Fallback: create 1 subject with synthesized modules if text contains content
     const chunkTopics = extractTopicsFromModuleLines(lines.slice(0, 30));
     subjects.push({
       code: currentCourseCode,
@@ -166,42 +226,88 @@ export function parsePdfText(rawText: string, filename: string = 'Document.pdf')
       semester: 'S5',
       credits: 4,
       color: '#00f0ff',
+      selected: true,
       modules: [
         {
           moduleNumber: 1,
           name: `Module 1: Core Syllabus Content`,
-          topics: chunkTopics.length > 0 ? chunkTopics : [
+          selected: true,
+          topics: (chunkTopics.length > 0 ? chunkTopics : [
             {
               title: currentCourseName,
               priority: 'HIGH' as const,
               subtopics: lines.slice(0, 4),
+              selected: true,
             },
-          ],
+          ]).map((t) => ({ ...t, selected: true })),
         },
       ],
     });
   }
 
+  let detectedType: 'SYLLABUS' | 'TIMETABLE' | 'SCHEDULE' | 'MIXED' = 'SYLLABUS';
+  if (exams.length > 0 && subjects.length > 0) {
+    detectedType = 'MIXED';
+  } else if (exams.length > 0) {
+    detectedType = 'TIMETABLE';
+  } else if (scheduleSlots.length > 0 && subjects.length === 0) {
+    detectedType = 'SCHEDULE';
+  }
+
   return {
     filename,
-    detectedType: isTimetable && exams.length > 0 ? (subjects.length > 0 ? 'MIXED' : 'TIMETABLE') : 'SYLLABUS',
+    detectedType,
     rawTextPreview: rawText.slice(0, 500),
+    isScanned: false,
     subjects,
     exams,
+    scheduleSlots: scheduleSlots.length > 0 ? scheduleSlots : undefined,
+  };
+}
+
+export function checkDuplicates(
+  payload: ExtractedPdfPayload,
+  existingSubjects: Array<{ name: string; courseCode?: string; code?: string }>,
+  existingExams: Array<{ subjectCode?: string; subjectName?: string }>
+): ExtractedPdfPayload {
+  const updatedSubjects = payload.subjects.map((sub) => {
+    const subCode = (sub.courseCode || sub.code || '').toLowerCase();
+    const subName = (sub.name || '').toLowerCase();
+    const isDup = existingSubjects.some((s) => {
+      const code = (s.courseCode || s.code || '').toLowerCase();
+      const name = (s.name || '').toLowerCase();
+      return (code && subCode && code === subCode) || (name && subName && name === subName);
+    });
+    return { ...sub, isDuplicate: isDup };
+  });
+
+  const updatedExams = payload.exams.map((exam) => {
+    const examCode = (exam.subjectCode || '').toLowerCase();
+    const examName = (exam.subjectName || '').toLowerCase();
+    const isDup = existingExams.some((e) => {
+      const code = (e.subjectCode || '').toLowerCase();
+      const name = (e.subjectName || '').toLowerCase();
+      return (code && examCode && code === examCode) || (name && examName && name === examName);
+    });
+    return { ...exam, isDuplicate: isDup };
+  });
+
+  return {
+    ...payload,
+    subjects: updatedSubjects,
+    exams: updatedExams,
   };
 }
 
 function extractTopicsFromModuleLines(lines: string[]): ExtractedTopicCandidate[] {
   const topics: ExtractedTopicCandidate[] = [];
   const textJoined = lines.join(' ');
-  // Split on semicolons or commas or periods followed by capitals
   const candidateSentences = textJoined
     .split(/;|•|\n|\r|(?<=[a-z0-9\)])\.\s+(?=[A-Z])/)
     .map((s) => s.trim())
     .filter((s) => s.length >= 8 && s.length <= 140);
 
   for (const sentence of candidateSentences) {
-    // Avoid noise
     if (/hours|marks|credits|syllabus|module|page/i.test(sentence) && sentence.length < 20) {
       continue;
     }
@@ -213,6 +319,7 @@ function extractTopicsFromModuleLines(lines: string[]): ExtractedTopicCandidate[
       title,
       priority: topics.length < 2 ? 'HIGH' : 'MEDIUM',
       subtopics: subtopics.length > 0 ? subtopics : undefined,
+      selected: true,
     });
   }
 
@@ -243,4 +350,12 @@ function normalizeDate(dateStr: string): string {
     }
   } catch {}
   return new Date().toISOString();
+}
+
+function normalizeTime(timeStr: string): string {
+  const clean = timeStr.replace('.', ':').trim();
+  const parts = clean.split(':');
+  const h = String(parseInt(parts[0], 10)).padStart(2, '0');
+  const m = String(parseInt(parts[1] || '0', 10)).padStart(2, '0');
+  return `${h}:${m}`;
 }

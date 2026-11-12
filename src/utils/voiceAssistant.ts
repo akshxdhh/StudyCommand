@@ -1,4 +1,4 @@
-// Offline AI Voice Assistant Engine using Web Speech API (STT & TTS)
+// Offline AI Voice Assistant Engine using Web Speech API (STT & TTS) + Context Awareness
 
 export type VoiceCommandAction =
   | 'START_FOCUS'
@@ -12,7 +12,11 @@ export type VoiceCommandAction =
   | 'NAV_TIMETABLE'
   | 'NAV_ANALYTICS'
   | 'NAV_SETTINGS'
-  | 'TIME_CHECK';
+  | 'EXAM_CHECK'
+  | 'SCHEDULE_CHECK'
+  | 'TOPIC_EXPLAIN'
+  | 'TIME_CHECK'
+  | 'GENERAL_QUERY';
 
 export interface VoiceCommandMatch {
   action: VoiceCommandAction;
@@ -20,10 +24,20 @@ export interface VoiceCommandMatch {
   response: string;
 }
 
+export interface AssistantContext {
+  currentSubject?: string;
+  currentTopic?: string;
+  timeLeft?: string;
+  nextExam?: string;
+  nextSlot?: string;
+  language?: string;
+}
+
 export class VoiceAssistant {
   private recognition: any = null;
   private isListening: boolean = false;
   private isSpeaking: boolean = false;
+  private context: AssistantContext = {};
   private onCommandCallback: ((cmd: VoiceCommandMatch) => void) | null = null;
   private onStatusChangeCallback: ((status: { isListening: boolean; isSpeaking: boolean; transcript: string; error?: string }) => void) | null = null;
 
@@ -31,14 +45,19 @@ export class VoiceAssistant {
     this.initRecognition();
   }
 
+  public setContext(ctx: AssistantContext) {
+    this.context = { ...this.context, ...ctx };
+  }
+
   private initRecognition() {
+    if (typeof window === 'undefined') return;
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       try {
         this.recognition = new SpeechRecognition();
         this.recognition.continuous = true;
         this.recognition.interimResults = false;
-        this.recognition.lang = 'en-US';
+        this.recognition.lang = this.context.language === 'es' ? 'es-ES' : this.context.language === 'ml' ? 'ml-IN' : this.context.language === 'hi' ? 'hi-IN' : 'en-US';
 
         this.recognition.onstart = () => {
           this.isListening = true;
@@ -113,12 +132,18 @@ export class VoiceAssistant {
   }
 
   public speak(text: string, onEnd?: () => void) {
-    if (!('speechSynthesis' in window)) return;
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 1.0;
       utterance.pitch = 1.0;
+
+      // Locale mapping
+      if (this.context.language === 'es') utterance.lang = 'es-ES';
+      else if (this.context.language === 'ml') utterance.lang = 'ml-IN';
+      else if (this.context.language === 'hi') utterance.lang = 'hi-IN';
+      else utterance.lang = 'en-US';
 
       this.isSpeaking = true;
       this.notifyStatus(text);
@@ -140,42 +165,67 @@ export class VoiceAssistant {
     }
   }
 
-  private handleTranscript(transcript: string) {
-    const lower = transcript.toLowerCase();
-    this.notifyStatus(transcript);
+  public processQuery(input: string, customContext?: AssistantContext): VoiceCommandMatch {
+    const ctx = { ...this.context, ...(customContext || {}) };
+    const lower = input.toLowerCase();
 
-    let match: VoiceCommandMatch | null = null;
+    let match: VoiceCommandMatch;
 
     if (lower.includes('start focus') || lower.includes('start study') || lower.includes('start session')) {
-      match = { action: 'START_FOCUS', rawText: transcript, response: 'Starting focus session now.' };
+      match = { action: 'START_FOCUS', rawText: input, response: 'Starting focus session now.' };
     } else if (lower.includes('pause timer') || lower.includes('pause')) {
-      match = { action: 'PAUSE_TIMER', rawText: transcript, response: 'Timer paused.' };
+      match = { action: 'PAUSE_TIMER', rawText: input, response: 'Timer paused.' };
     } else if (lower.includes('resume timer') || lower.includes('resume')) {
-      match = { action: 'RESUME_TIMER', rawText: transcript, response: 'Resuming focus timer.' };
+      match = { action: 'RESUME_TIMER', rawText: input, response: 'Resuming focus timer.' };
     } else if (lower.includes('reset timer') || lower.includes('reset')) {
-      match = { action: 'RESET_TIMER', rawText: transcript, response: 'Timer reset to initial duration.' };
+      match = { action: 'RESET_TIMER', rawText: input, response: 'Timer reset to initial duration.' };
     } else if (lower.includes('finish early') || lower.includes('finish session') || lower.includes('complete session')) {
-      match = { action: 'FINISH_EARLY', rawText: transcript, response: 'Completing session.' };
+      match = { action: 'FINISH_EARLY', rawText: input, response: 'Completing session.' };
     } else if (lower.includes('read prompt') || lower.includes('read notes') || lower.includes('read study prompt')) {
-      match = { action: 'READ_PROMPT', rawText: transcript, response: 'Reading your exam study prompt.' };
+      match = { action: 'READ_PROMPT', rawText: input, response: 'Reading your exam study prompt.' };
+    } else if (lower.includes('next exam') || lower.includes('when is my exam') || lower.includes('upcoming exam')) {
+      const resp = ctx.nextExam ? `Your upcoming examination is ${ctx.nextExam}.` : 'No upcoming exam dates are currently configured.';
+      match = { action: 'EXAM_CHECK', rawText: input, response: resp };
+    } else if (lower.includes('next on my schedule') || lower.includes('next session') || lower.includes('what is next') || lower.includes('schedule')) {
+      const resp = ctx.nextSlot ? `Next on your schedule is ${ctx.nextSlot}.` : 'No further study sessions scheduled for today.';
+      match = { action: 'SCHEDULE_CHECK', rawText: input, response: resp };
+    } else if (lower.includes('explain') || lower.includes('what am i studying') || lower.includes('current topic')) {
+      const topic = ctx.currentTopic || 'your selected focus topic';
+      const subj = ctx.currentSubject ? `in ${ctx.currentSubject}` : '';
+      match = {
+        action: 'TOPIC_EXPLAIN',
+        rawText: input,
+        response: `Studying ${topic} ${subj}. Focus on core definitions, exam patterns, and key formulas.`,
+      };
     } else if (lower.includes('time left') || lower.includes('how much time') || lower.includes('remaining time')) {
-      match = { action: 'TIME_CHECK', rawText: transcript, response: 'Checking remaining time.' };
+      const resp = ctx.timeLeft ? `There are ${ctx.timeLeft} remaining in this session.` : 'Timer is currently idle.';
+      match = { action: 'TIME_CHECK', rawText: input, response: resp };
     } else if (lower.includes('dashboard') || lower.includes('home')) {
-      match = { action: 'NAV_DASHBOARD', rawText: transcript, response: 'Opening Dashboard.' };
+      match = { action: 'NAV_DASHBOARD', rawText: input, response: 'Opening Dashboard.' };
     } else if (lower.includes('planner') || lower.includes('syllabus')) {
-      match = { action: 'NAV_PLANNER', rawText: transcript, response: 'Opening Study Planner.' };
-    } else if (lower.includes('timetable') || lower.includes('schedule')) {
-      match = { action: 'NAV_TIMETABLE', rawText: transcript, response: 'Opening Timetable.' };
-    } else if (lower.includes('analytics') || lower.includes('stats')) {
-      match = { action: 'NAV_ANALYTICS', rawText: transcript, response: 'Opening Analytics.' };
+      match = { action: 'NAV_PLANNER', rawText: input, response: 'Opening Study Planner.' };
+    } else if (lower.includes('timetable') || lower.includes('routine')) {
+      match = { action: 'NAV_TIMETABLE', rawText: input, response: 'Opening Timetable.' };
+    } else if (lower.includes('analytics') || lower.includes('stats') || lower.includes('history')) {
+      match = { action: 'NAV_ANALYTICS', rawText: input, response: 'Opening Analytics & History.' };
     } else if (lower.includes('settings')) {
-      match = { action: 'NAV_SETTINGS', rawText: transcript, response: 'Opening Settings.' };
+      match = { action: 'NAV_SETTINGS', rawText: input, response: 'Opening Settings.' };
+    } else {
+      match = {
+        action: 'GENERAL_QUERY',
+        rawText: input,
+        response: `Command recognized: "${input}". You can say "start focus", "next exam", "time left", or navigate pages.`,
+      };
     }
 
-    if (match) {
-      this.speak(match.response);
-      this.onCommandCallback?.(match);
-    }
+    this.speak(match.response);
+    return match;
+  }
+
+  private handleTranscript(transcript: string) {
+    this.notifyStatus(transcript);
+    const match = this.processQuery(transcript);
+    this.onCommandCallback?.(match);
   }
 
   private notifyStatus(transcript: string, error?: string) {

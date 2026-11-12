@@ -16,17 +16,23 @@ import {
   SupportedLanguage
 } from './types';
 
+export const DEFAULT_EMPTY_PROFILE: UserProfile = {
+  id: 'profile-default',
+  name: 'Scholar',
+  avatar: '⚡',
+  language: 'en',
+  subjects: [],
+  exams: [],
+  timetable: [],
+  dailyRecords: {},
+  focusLogs: [],
+  onboardingCompleted: false,
+  tutorialCompleted: false,
+  createdAt: new Date().toISOString(),
+};
+
 export const DEFAULT_PROFILES: UserProfile[] = [
-  {
-    id: 'profile-default',
-    name: 'Commander',
-    avatar: '⚡',
-    majorOrCourse: 'Computer Science (KTU S5)',
-    targetExamDate: '2026-11-23',
-    dailyGoalHours: 6,
-    language: 'en',
-    createdAt: new Date().toISOString(),
-  },
+  { ...DEFAULT_EMPTY_PROFILE },
 ];
 
 export const DEFAULT_PRESETS: SessionPreset[] = [
@@ -1243,33 +1249,37 @@ export class StoreManager {
   }
 
   public resetToDefaults(): AppDataStore {
-    const today = this.getTodayDateString();
-    this.data = {
-      version: 3,
-      subjects: JSON.parse(JSON.stringify(DEFAULT_SUBJECTS)),
-      exams: JSON.parse(JSON.stringify(DEFAULT_EXAMS)),
-      timetable: JSON.parse(JSON.stringify(DEFAULT_TIMETABLE)),
-      dailyRecords: {},
-      focusLogs: [],
-      settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
-      lastActiveDate: today,
-    };
-    this.ensureTodayRecords();
-    this.saveData();
-    return this.data;
+    return this.factoryReset();
   }
 
   public updateData(partial: Partial<AppDataStore>): AppDataStore {
     this.data = {
       ...this.data,
       ...partial,
-      subjects: partial.subjects || this.data.subjects,
-      exams: partial.exams || this.data.exams,
-      timetable: partial.timetable || this.data.timetable,
-      dailyRecords: partial.dailyRecords || this.data.dailyRecords,
-      focusLogs: partial.focusLogs || this.data.focusLogs,
+      subjects: partial.subjects !== undefined ? partial.subjects : this.data.subjects,
+      exams: partial.exams !== undefined ? partial.exams : this.data.exams,
+      timetable: partial.timetable !== undefined ? partial.timetable : this.data.timetable,
+      dailyRecords: partial.dailyRecords !== undefined ? partial.dailyRecords : this.data.dailyRecords,
+      focusLogs: partial.focusLogs !== undefined ? partial.focusLogs : this.data.focusLogs,
       settings: partial.settings ? { ...this.data.settings, ...partial.settings } : this.data.settings,
     };
+
+    // Keep active profile in sync
+    const activeId = this.data.settings?.activeProfileId;
+    if (activeId && this.data.settings?.profiles) {
+      const idx = this.data.settings.profiles.findIndex((p) => p.id === activeId);
+      if (idx !== -1) {
+        this.data.settings.profiles[idx] = {
+          ...this.data.settings.profiles[idx],
+          subjects: this.data.subjects,
+          exams: this.data.exams,
+          timetable: this.data.timetable,
+          dailyRecords: this.data.dailyRecords,
+          focusLogs: this.data.focusLogs,
+        };
+      }
+    }
+
     this.saveData();
     return this.data;
   }
@@ -1298,19 +1308,34 @@ export class StoreManager {
       try {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        // Auto-migrate to version 3 (Profiles, Presets, Focus V3, i18n, Onboarding)
         const version = 3;
-        const subjects = parsed.subjects && parsed.subjects.length > 0 ? parsed.subjects : DEFAULT_SUBJECTS;
-        const exams = parsed.exams && parsed.exams.length > 0 ? parsed.exams : DEFAULT_EXAMS;
-        const timetable = parsed.timetable || DEFAULT_TIMETABLE;
-        const dailyRecords = parsed.dailyRecords || {};
-        const focusLogs = parsed.focusLogs || [];
 
         const loadedSettings = parsed.settings || {};
-        const profiles = loadedSettings.profiles && loadedSettings.profiles.length > 0
+        let profiles: UserProfile[] = loadedSettings.profiles && loadedSettings.profiles.length > 0
           ? loadedSettings.profiles
           : JSON.parse(JSON.stringify(DEFAULT_PROFILES));
+
+        // Migration: If legacy store had top-level data and profiles[0] is uninitialized, preserve user data
+        if (parsed.subjects && parsed.subjects.length > 0 && (!profiles[0].subjects || profiles[0].subjects.length === 0)) {
+          profiles[0].subjects = parsed.subjects;
+          profiles[0].exams = parsed.exams || [];
+          profiles[0].timetable = parsed.timetable || [];
+          profiles[0].dailyRecords = parsed.dailyRecords || {};
+          profiles[0].focusLogs = parsed.focusLogs || [];
+          profiles[0].onboardingCompleted = true;
+          profiles[0].tutorialCompleted = true;
+        }
+
         const activeProfileId = loadedSettings.activeProfileId || profiles[0]?.id || 'profile-default';
+        const activeProfile = profiles.find((p) => p.id === activeProfileId) || profiles[0];
+
+        // Active profile data isolation: top-level points to the active profile's data
+        const subjects = activeProfile?.subjects ?? (parsed.subjects || []);
+        const exams = activeProfile?.exams ?? (parsed.exams || []);
+        const timetable = activeProfile?.timetable ?? (parsed.timetable || []);
+        const dailyRecords = activeProfile?.dailyRecords ?? (parsed.dailyRecords || {});
+        const focusLogs = activeProfile?.focusLogs ?? (parsed.focusLogs || []);
+
         const presets = loadedSettings.presets && loadedSettings.presets.length > 0
           ? loadedSettings.presets
           : JSON.parse(JSON.stringify(DEFAULT_PRESETS));
@@ -1326,7 +1351,7 @@ export class StoreManager {
           settings: {
             ...DEFAULT_SETTINGS,
             ...loadedSettings,
-            language: loadedSettings.language || 'en',
+            language: activeProfile?.language || loadedSettings.language || 'en',
             activeProfileId,
             profiles,
             activePresetId,
@@ -1337,7 +1362,7 @@ export class StoreManager {
             },
             onboarding: {
               ...DEFAULT_ONBOARDING,
-              completed: parsed.version && parsed.version >= 2 ? true : (loadedSettings.onboarding?.completed ?? false),
+              completed: activeProfile?.onboardingCompleted ?? (loadedSettings.onboarding?.completed ?? false),
               ...(loadedSettings.onboarding || {}),
             },
             sidebarCollapsed: loadedSettings.sidebarCollapsed ?? false,
@@ -1357,19 +1382,155 @@ export class StoreManager {
 
   private createDefaultStore(): AppDataStore {
     const today = this.getTodayDateString();
-    const newStore: AppDataStore = {
-      version: 3,
-      subjects: JSON.parse(JSON.stringify(DEFAULT_SUBJECTS)),
-      exams: JSON.parse(JSON.stringify(DEFAULT_EXAMS)),
-      timetable: JSON.parse(JSON.stringify(DEFAULT_TIMETABLE)),
+    const defaultProfile: UserProfile = {
+      id: 'profile-default',
+      name: 'Scholar',
+      avatar: '⚡',
+      language: 'en',
+      subjects: [],
+      exams: [],
+      timetable: [],
       dailyRecords: {},
       focusLogs: [],
-      settings: JSON.parse(JSON.stringify(DEFAULT_SETTINGS)),
+      onboardingCompleted: false,
+      tutorialCompleted: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const newStore: AppDataStore = {
+      version: 3,
+      subjects: [],
+      exams: [],
+      timetable: [],
+      dailyRecords: {},
+      focusLogs: [],
+      settings: {
+        ...DEFAULT_SETTINGS,
+        language: 'en',
+        activeProfileId: defaultProfile.id,
+        profiles: [defaultProfile],
+        onboarding: {
+          completed: false,
+          step: 1,
+        },
+      },
       lastActiveDate: today,
     };
     this.data = newStore;
     this.saveData();
     return newStore;
+  }
+
+  public switchProfile(profileId: string): AppDataStore {
+    const profiles = this.data.settings.profiles;
+    const currentActiveId = this.data.settings.activeProfileId;
+    const currentIdx = profiles.findIndex((p) => p.id === currentActiveId);
+
+    // Save current active profile's state
+    if (currentIdx !== -1) {
+      profiles[currentIdx] = {
+        ...profiles[currentIdx],
+        subjects: this.data.subjects,
+        exams: this.data.exams,
+        timetable: this.data.timetable,
+        dailyRecords: this.data.dailyRecords,
+        focusLogs: this.data.focusLogs,
+      };
+    }
+
+    // Load new active profile
+    const targetIdx = profiles.findIndex((p) => p.id === profileId);
+    if (targetIdx !== -1) {
+      const target = profiles[targetIdx];
+      this.data.subjects = target.subjects || [];
+      this.data.exams = target.exams || [];
+      this.data.timetable = target.timetable || [];
+      this.data.dailyRecords = target.dailyRecords || {};
+      this.data.focusLogs = target.focusLogs || [];
+      this.data.settings.activeProfileId = target.id;
+      this.data.settings.language = target.language || this.data.settings.language;
+      this.data.settings.onboarding.completed = target.onboardingCompleted ?? true;
+      this.saveData();
+    }
+    return this.data;
+  }
+
+  public createProfile(profileData: Partial<UserProfile>): AppDataStore {
+    const newProfile: UserProfile = {
+      id: `profile-${Date.now()}`,
+      name: profileData.name || 'New Scholar',
+      avatar: profileData.avatar || '🎓',
+      academicInfo: profileData.academicInfo,
+      majorOrCourse: profileData.majorOrCourse,
+      targetExamDate: profileData.targetExamDate,
+      dailyGoalHours: profileData.dailyGoalHours || 4,
+      language: profileData.language || this.data.settings.language,
+      subjects: [],
+      exams: [],
+      timetable: [],
+      dailyRecords: {},
+      focusLogs: [],
+      onboardingCompleted: profileData.onboardingCompleted ?? false,
+      tutorialCompleted: profileData.tutorialCompleted ?? false,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.data.settings.profiles.push(newProfile);
+    return this.switchProfile(newProfile.id);
+  }
+
+  public deleteProfile(profileId: string): AppDataStore {
+    if (this.data.settings.profiles.length <= 1) {
+      return this.data; // Cannot delete last profile
+    }
+    this.data.settings.profiles = this.data.settings.profiles.filter((p) => p.id !== profileId);
+    if (this.data.settings.activeProfileId === profileId) {
+      const nextId = this.data.settings.profiles[0].id;
+      return this.switchProfile(nextId);
+    }
+    this.saveData();
+    return this.data;
+  }
+
+  public clearUserData(options: { profileOnly?: boolean; profileId?: string }): AppDataStore {
+    const targetId = options.profileId || this.data.settings.activeProfileId;
+    if (options.profileOnly) {
+      const idx = this.data.settings.profiles.findIndex((p) => p.id === targetId);
+      if (idx !== -1) {
+        this.data.settings.profiles[idx].subjects = [];
+        this.data.settings.profiles[idx].exams = [];
+        this.data.settings.profiles[idx].timetable = [];
+        this.data.settings.profiles[idx].dailyRecords = {};
+        this.data.settings.profiles[idx].focusLogs = [];
+        if (targetId === this.data.settings.activeProfileId) {
+          this.data.subjects = [];
+          this.data.exams = [];
+          this.data.timetable = [];
+          this.data.dailyRecords = {};
+          this.data.focusLogs = [];
+        }
+      }
+    } else {
+      // Clear for all profiles
+      this.data.settings.profiles.forEach((p) => {
+        p.subjects = [];
+        p.exams = [];
+        p.timetable = [];
+        p.dailyRecords = {};
+        p.focusLogs = [];
+      });
+      this.data.subjects = [];
+      this.data.exams = [];
+      this.data.timetable = [];
+      this.data.dailyRecords = {};
+      this.data.focusLogs = [];
+    }
+    this.saveData();
+    return this.data;
+  }
+
+  public factoryReset(): AppDataStore {
+    return this.createDefaultStore();
   }
 
   public saveData(): void {

@@ -69,12 +69,23 @@ interface AppContextType {
   moveToDisplay: (displayId: number) => Promise<boolean>;
   updateFocusV3: (settings: Partial<FocusV3Settings>) => Promise<void>;
 
-  // Sidebar & Onboarding
+  // Sidebar & Onboarding & Tutorial
   sidebarCollapsed: boolean;
   toggleSidebarCollapsed: () => Promise<void>;
   showOnboarding: boolean;
   setShowOnboarding: (val: boolean) => void;
-  completeOnboarding: (profileData?: Partial<UserProfile>, presetId?: string) => Promise<void>;
+  completeOnboarding: (profileData?: Partial<UserProfile>, presetId?: string, openTutorial?: boolean) => Promise<void>;
+  showTutorial: boolean;
+  setShowTutorial: (val: boolean) => void;
+  startTutorial: () => void;
+  completeTutorial: () => Promise<void>;
+
+  // Storage & Cache management
+  getCacheSize: () => Promise<number>;
+  clearCache: () => Promise<{ success: boolean; bytesCleared: number }>;
+  clearCurrentProfileData: () => Promise<void>;
+  clearAllProfilesData: () => Promise<void>;
+  factoryResetApp: () => Promise<void>;
 
   // PDF Syllabus / Timetable Import
   importExtractedPayload: (extracted: ExtractedPdfPayload) => Promise<{ subjectsAdded: number; examsAdded: number }>;
@@ -112,6 +123,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [displays, setDisplays] = useState<DisplayInfo[]>([]);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(false);
+  const [showTutorial, setShowTutorial] = useState<boolean>(false);
 
   const loadData = useCallback(async () => {
     try {
@@ -173,7 +185,33 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const saveData = async (partial: Partial<AppDataStore>) => {
     if (!data) return;
-    const updated = { ...data, ...partial };
+    const updated: AppDataStore = {
+      ...data,
+      ...partial,
+      subjects: partial.subjects !== undefined ? partial.subjects : data.subjects,
+      exams: partial.exams !== undefined ? partial.exams : data.exams,
+      timetable: partial.timetable !== undefined ? partial.timetable : data.timetable,
+      dailyRecords: partial.dailyRecords !== undefined ? partial.dailyRecords : data.dailyRecords,
+      focusLogs: partial.focusLogs !== undefined ? partial.focusLogs : data.focusLogs,
+      settings: partial.settings ? { ...data.settings, ...partial.settings } : data.settings,
+    };
+
+    // Keep active profile synced
+    const activeId = updated.settings.activeProfileId;
+    if (activeId && updated.settings.profiles) {
+      const idx = updated.settings.profiles.findIndex((p) => p.id === activeId);
+      if (idx !== -1) {
+        updated.settings.profiles[idx] = {
+          ...updated.settings.profiles[idx],
+          subjects: updated.subjects,
+          exams: updated.exams,
+          timetable: updated.timetable,
+          dailyRecords: updated.dailyRecords,
+          focusLogs: updated.focusLogs,
+        };
+      }
+    }
+
     setData(updated);
     if (window.electronAPI) {
       await window.electronAPI.saveStoreData(partial);
@@ -200,12 +238,16 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!data?.settings?.profiles || data.settings.profiles.length === 0) {
       return {
         id: 'profile-default',
-        name: 'Commander',
+        name: 'Scholar',
         avatar: '⚡',
-        majorOrCourse: 'Computer Science (KTU S5)',
-        targetExamDate: '2026-11-23',
-        dailyGoalHours: 6,
         language: 'en',
+        subjects: [],
+        exams: [],
+        timetable: [],
+        dailyRecords: {},
+        focusLogs: [],
+        onboardingCompleted: false,
+        tutorialCompleted: false,
         createdAt: new Date().toISOString(),
       };
     }
@@ -215,28 +257,108 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const switchProfile = async (profileId: string) => {
     if (!data) return;
-    const profile = data.settings.profiles.find((p) => p.id === profileId);
-    if (profile) {
-      await updateSettings({
-        activeProfileId: profileId,
-        language: profile.language || data.settings.language,
-      });
+    const currentActiveId = data.settings.activeProfileId;
+    const profiles = [...data.settings.profiles];
+
+    // Persist current active profile state
+    const currentIdx = profiles.findIndex((p) => p.id === currentActiveId);
+    if (currentIdx !== -1) {
+      profiles[currentIdx] = {
+        ...profiles[currentIdx],
+        subjects: data.subjects,
+        exams: data.exams,
+        timetable: data.timetable,
+        dailyRecords: data.dailyRecords,
+        focusLogs: data.focusLogs,
+      };
+    }
+
+    // Load target profile
+    const targetIdx = profiles.findIndex((p) => p.id === profileId);
+    if (targetIdx !== -1) {
+      const target = profiles[targetIdx];
+      const updatedData: AppDataStore = {
+        ...data,
+        subjects: target.subjects || [],
+        exams: target.exams || [],
+        timetable: target.timetable || [],
+        dailyRecords: target.dailyRecords || {},
+        focusLogs: target.focusLogs || [],
+        settings: {
+          ...data.settings,
+          profiles,
+          activeProfileId: target.id,
+          language: target.language || data.settings.language,
+          onboarding: {
+            ...data.settings.onboarding,
+            completed: target.onboardingCompleted ?? true,
+          },
+        },
+      };
+      setData(updatedData);
+      if (window.electronAPI) {
+        await window.electronAPI.saveStoreData(updatedData);
+      }
     }
   };
 
   const createProfile = async (profileData: Omit<UserProfile, 'id' | 'createdAt'>) => {
     if (!data) return;
+    const currentActiveId = data.settings.activeProfileId;
+    const profiles = [...data.settings.profiles];
+
+    // Save current active profile's state
+    const currentIdx = profiles.findIndex((p) => p.id === currentActiveId);
+    if (currentIdx !== -1) {
+      profiles[currentIdx] = {
+        ...profiles[currentIdx],
+        subjects: data.subjects,
+        exams: data.exams,
+        timetable: data.timetable,
+        dailyRecords: data.dailyRecords,
+        focusLogs: data.focusLogs,
+      };
+    }
+
     const newProfile: UserProfile = {
       ...profileData,
       id: `profile-${Date.now()}`,
+      subjects: [],
+      exams: [],
+      timetable: [],
+      dailyRecords: {},
+      focusLogs: [],
+      onboardingCompleted: profileData.onboardingCompleted ?? false,
+      tutorialCompleted: profileData.tutorialCompleted ?? false,
       createdAt: new Date().toISOString(),
     };
-    const updated = [...data.settings.profiles, newProfile];
-    await updateSettings({
-      profiles: updated,
-      activeProfileId: newProfile.id,
-      language: newProfile.language,
-    });
+
+    const updatedProfiles = [...profiles, newProfile];
+    const updatedData: AppDataStore = {
+      ...data,
+      subjects: [],
+      exams: [],
+      timetable: [],
+      dailyRecords: {},
+      focusLogs: [],
+      settings: {
+        ...data.settings,
+        profiles: updatedProfiles,
+        activeProfileId: newProfile.id,
+        language: newProfile.language,
+        onboarding: {
+          ...data.settings.onboarding,
+          completed: newProfile.onboardingCompleted,
+        },
+      },
+    };
+    setData(updatedData);
+    if (window.electronAPI) {
+      await window.electronAPI.saveStoreData(updatedData);
+    }
+    if (!newProfile.onboardingCompleted) {
+      setShowOnboarding(true);
+    }
   };
 
   const updateProfile = async (profileId: string, updates: Partial<UserProfile>) => {
@@ -249,6 +371,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (!data || data.settings.profiles.length <= 1) return;
     const updated = data.settings.profiles.filter((p) => p.id !== profileId);
     const nextActive = updated[0].id;
+    await switchProfile(nextActive);
     await updateSettings({ profiles: updated, activeProfileId: nextActive });
   };
 
@@ -322,11 +445,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     await updateSettings({ sidebarCollapsed: next });
   };
 
-  const completeOnboarding = async (profileData?: Partial<UserProfile>, presetId?: string) => {
+  const completeOnboarding = async (profileData?: Partial<UserProfile>, presetId?: string, openTutorial?: boolean) => {
     if (!data) return;
     let profiles = [...data.settings.profiles];
     if (profileData) {
-      profiles = profiles.map((p) => (p.id === activeProfile.id ? { ...p, ...profileData } : p));
+      profiles = profiles.map((p) => (p.id === activeProfile.id ? { ...p, ...profileData, onboardingCompleted: true } : p));
+    } else {
+      profiles = profiles.map((p) => (p.id === activeProfile.id ? { ...p, onboardingCompleted: true } : p));
     }
     await updateSettings({
       profiles,
@@ -335,6 +460,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     });
     setShowOnboarding(false);
     triggerConfetti();
+    if (openTutorial) {
+      startTutorial();
+    }
+  };
+
+  const startTutorial = () => {
+    setActiveTab('dashboard');
+    setShowTutorial(true);
+  };
+
+  const completeTutorial = async () => {
+    if (!data) return;
+    const profiles = data.settings.profiles.map((p) =>
+      p.id === activeProfile.id ? { ...p, tutorialCompleted: true } : p
+    );
+    await updateSettings({ profiles });
+    setShowTutorial(false);
+  };
+
+  // Cache & Storage Management
+  const getCacheSize = async (): Promise<number> => {
+    if (window.electronAPI?.getCacheSize) {
+      return await window.electronAPI.getCacheSize();
+    }
+    return 0;
+  };
+
+  const clearCache = async (): Promise<{ success: boolean; bytesCleared: number }> => {
+    if (window.electronAPI?.clearCache) {
+      return await window.electronAPI.clearCache();
+    }
+    return { success: true, bytesCleared: 0 };
+  };
+
+  const clearCurrentProfileData = async () => {
+    if (!data) return;
+    await updateSubjects([]);
+    await updateExams([]);
+    await updateTimetable([]);
+    await saveData({ dailyRecords: {}, focusLogs: [] });
+  };
+
+  const clearAllProfilesData = async () => {
+    if (window.electronAPI?.clearUserData) {
+      await window.electronAPI.clearUserData({ profileOnly: false });
+    }
+    await clearCurrentProfileData();
+  };
+
+  const factoryResetApp = async () => {
+    if (window.electronAPI?.factoryReset) {
+      await window.electronAPI.factoryReset();
+      const fresh = await window.electronAPI.getStoreData();
+      setData(fresh);
+      setShowOnboarding(true);
+      setShowTutorial(false);
+    } else {
+      await resetToDefaults();
+    }
   };
 
   // PDF Syllabus & Timetable Import
@@ -761,6 +945,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         showOnboarding,
         setShowOnboarding,
         completeOnboarding,
+        showTutorial,
+        setShowTutorial,
+        startTutorial,
+        completeTutorial,
+        getCacheSize,
+        clearCache,
+        clearCurrentProfileData,
+        clearAllProfilesData,
+        factoryResetApp,
         importExtractedPayload,
         markSessionCompleted,
         markSessionSkipped,

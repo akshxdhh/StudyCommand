@@ -191,7 +191,7 @@ export const Sidebar: React.FC = () => {
                   }`}
                   title={sidebarCollapsed ? label : undefined}
                 >
-                  <div className="flex items-center space-x-2.5">
+                  <div className="flex items-center space-x-2.5 min-w-0">
                     <Icon
                       className={`w-4 h-4 shrink-0 transition-colors ${
                         isActive ? 'text-white' : 'text-app-muted group-hover:text-app-ink'

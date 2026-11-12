@@ -48,6 +48,7 @@ import {
   StudyGoal,
   AnswerLength
 } from '../utils/promptGenerator';
+import { engagementMonitor, EngagementState } from '../utils/engagementMonitor';
 import { TopicStatus, Subject, Module, Topic, SessionPreset } from '../types';
 
 type TimerMode = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
@@ -113,11 +114,11 @@ export const FocusMode: React.FC = () => {
   const [soundscape, setSoundscape] = useState<SoundscapeType>('none');
   const [shieldActive, setShieldActive] = useState<boolean>(true);
   const [distractionWarning, setDistractionWarning] = useState<string | null>(null);
-  const [engagementMonitor, setEngagementMonitor] = useState<boolean>(false);
-  const [engagementStatus, setEngagementStatus] = useState<'idle' | 'calibrating' | 'focused' | 'declined'>('idle');
+  const [engagementMonitorEnabled, setEngagementMonitorEnabled] = useState<boolean>(false);
+  const [engagementState, setEngagementState] = useState<EngagementState>('idle');
+  const [engagementMsg, setEngagementMsg] = useState<string>('');
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
 
   // Timer state
   const [mode, setMode] = useState<TimerMode>('FOCUS');
@@ -209,37 +210,21 @@ export const FocusMode: React.FC = () => {
 
   // Engagement Monitor (Local Webcam Presence)
   useEffect(() => {
-    if (engagementMonitor && isActive && mode === 'FOCUS') {
-      setEngagementStatus('calibrating');
-      navigator.mediaDevices
-        ?.getUserMedia({ video: { width: 160, height: 120 } })
-        .then((stream) => {
-          streamRef.current = stream;
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            videoRef.current.play().catch(() => {});
-          }
-          setEngagementStatus('focused');
-        })
-        .catch((err) => {
-          console.warn('Webcam engagement declined or unavailable:', err);
-          setEngagementStatus('declined');
-        });
+    if (engagementMonitorEnabled && isActive && mode === 'FOCUS') {
+      engagementMonitor.start(videoRef.current, (st, msg) => {
+        setEngagementState(st);
+        if (msg) setEngagementMsg(msg);
+      });
     } else {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
-      setEngagementStatus('idle');
+      engagementMonitor.stop();
+      setEngagementState('idle');
+      setEngagementMsg('');
     }
 
     return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-        streamRef.current = null;
-      }
+      engagementMonitor.stop();
     };
-  }, [engagementMonitor, isActive, mode]);
+  }, [engagementMonitorEnabled, isActive, mode]);
 
   // Switch timer modes
   const switchMode = (newMode: TimerMode) => {
@@ -540,16 +525,16 @@ export const FocusMode: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setEngagementMonitor(!engagementMonitor)}
+            onClick={() => setEngagementMonitorEnabled(!engagementMonitorEnabled)}
             className={`px-2 py-1 rounded-component border text-[11px] font-mono flex items-center gap-1 transition-colors ${
-              engagementMonitor
+              engagementMonitorEnabled
                 ? 'bg-app-accent/15 text-app-accent border-app-accent/30'
                 : 'bg-app-bg text-app-muted border-app-line hover:text-app-ink'
             }`}
-            title="Local Webcam Presence / Engagement Indicator (100% Offline)"
+            title="Local Camera Presence Monitor (Strictly Offline, Zero Recording)"
           >
             <Video className="w-3 h-3" />
-            <span>Monitor</span>
+            <span>Camera Monitor: {engagementMonitorEnabled ? 'ON' : 'OFF'}</span>
           </button>
 
           <button
@@ -961,10 +946,39 @@ export const FocusMode: React.FC = () => {
               </div>
 
               {/* Engagement Status Badge */}
-              {engagementMonitor && (
-                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-app-accent/15 border border-app-accent/30 text-app-accent text-[10px] font-mono">
-                  <span className="w-1.5 h-1.5 rounded-full bg-app-accent animate-ping"></span>
-                  <span>{engagementStatus === 'focused' ? 'ATTENTION ENGAGED' : 'MONITORING'}</span>
+              {engagementMonitorEnabled && (
+                <div
+                  className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-mono transition-colors ${
+                    engagementState === 'active'
+                      ? 'bg-app-live/15 border-app-live/30 text-app-live'
+                      : engagementState === 'away'
+                      ? 'bg-app-warn/15 border-app-warn/30 text-app-warn animate-pulse'
+                      : engagementState === 'error'
+                      ? 'bg-app-danger/15 border-app-danger/30 text-app-danger'
+                      : 'bg-app-accent/15 border-app-accent/30 text-app-accent'
+                  }`}
+                  title={engagementMsg}
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      engagementState === 'active'
+                        ? 'bg-app-live animate-ping'
+                        : engagementState === 'away'
+                        ? 'bg-app-warn'
+                        : engagementState === 'error'
+                        ? 'bg-app-danger'
+                        : 'bg-app-accent animate-pulse'
+                    }`}
+                  />
+                  <span>
+                    {engagementState === 'active'
+                      ? 'PRESENCE ENGAGED'
+                      : engagementState === 'away'
+                      ? 'PRESENCE CHECK: AWAY'
+                      : engagementState === 'error'
+                      ? 'CAMERA BLOCKED / IN USE'
+                      : 'CALIBRATING...'}
+                  </span>
                 </div>
               )}
 

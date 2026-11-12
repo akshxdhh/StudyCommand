@@ -8,7 +8,8 @@ import {
   Check,
   X,
   Target,
-  Sparkles
+  Sparkles,
+  Plus
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { calculateExamCountdown } from '../utils/time';
@@ -20,6 +21,11 @@ export const ExamCountdown: React.FC = () => {
 
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [editDate, setEditDate] = useState<string>('');
+  const [isAddingExam, setIsAddingExam] = useState<boolean>(false);
+  const [newExamCode, setNewExamCode] = useState<string>('');
+  const [newExamName, setNewExamName] = useState<string>('');
+  const [newExamDate, setNewExamDate] = useState<string>('');
+  const [newExamIsLab, setNewExamIsLab] = useState<boolean>(false);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -63,6 +69,25 @@ export const ExamCountdown: React.FC = () => {
     setEditingExamId(null);
   };
 
+  const handleAddExam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newExamName.trim() || !newExamDate) return;
+    const newEx: Exam = {
+      id: `exam-${Date.now()}`,
+      subjectCode: newExamCode.trim() || newExamName.slice(0, 6).toUpperCase(),
+      subjectName: newExamName.trim(),
+      date: `${newExamDate}T09:30:00`,
+      color: '#8b5cf6',
+      isLab: newExamIsLab,
+    };
+    await updateExams([...data.exams, newEx]);
+    setNewExamCode('');
+    setNewExamName('');
+    setNewExamDate('');
+    setNewExamIsLab(false);
+    setIsAddingExam(false);
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6">
       {/* Top Header */}
@@ -79,7 +104,111 @@ export const ExamCountdown: React.FC = () => {
             Live telemetry, days countdown, and syllabus preparation readiness for all theory and lab examinations.
           </p>
         </div>
+
+        <button
+          onClick={() => setIsAddingExam(true)}
+          className="px-3.5 py-2 bg-app-accent hover:opacity-90 text-white rounded-component text-xs font-bold shadow-panel flex items-center gap-1.5 transition-all"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          <span>Add Exam Target</span>
+        </button>
       </div>
+
+      {/* Add Exam Modal */}
+      {isAddingExam && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <form onSubmit={handleAddExam} className="bg-app-surface border border-app-line rounded-card p-5 max-w-md w-full space-y-4 shadow-panel">
+            <div className="flex items-center justify-between border-b border-app-line pb-2">
+              <h3 className="text-xs font-bold text-app-ink uppercase font-mono tracking-wider">Add Examination Target</h3>
+              <button type="button" onClick={() => setIsAddingExam(false)} className="text-app-muted hover:text-app-ink">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs font-mono text-app-muted block mb-1">Subject Code</label>
+              <input
+                type="text"
+                value={newExamCode}
+                onChange={(e) => setNewExamCode(e.target.value)}
+                placeholder="e.g. PCCST501"
+                className="w-full px-3 py-2 bg-app-bg border border-app-line rounded-component text-xs text-app-ink uppercase font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-mono text-app-muted block mb-1">Subject Name *</label>
+              <input
+                type="text"
+                value={newExamName}
+                onChange={(e) => setNewExamName(e.target.value)}
+                placeholder="e.g. Computer Networks"
+                required
+                className="w-full px-3 py-2 bg-app-bg border border-app-line rounded-component text-xs text-app-ink font-semibold"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-mono text-app-muted block mb-1">Examination Date *</label>
+              <input
+                type="date"
+                value={newExamDate}
+                onChange={(e) => setNewExamDate(e.target.value)}
+                required
+                className="w-full px-3 py-2 bg-app-bg border border-app-line rounded-component text-xs text-app-ink font-mono"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="isLabCheck"
+                checked={newExamIsLab}
+                onChange={(e) => setNewExamIsLab(e.target.checked)}
+                className="w-4 h-4 accent-app-accent"
+              />
+              <label htmlFor="isLabCheck" className="text-xs text-app-ink">
+                This is a Practical / Lab / Viva Exam
+              </label>
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-app-line">
+              <button
+                type="button"
+                onClick={() => setIsAddingExam(false)}
+                className="px-3 py-1.5 text-xs text-app-muted hover:text-app-ink"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 bg-app-accent hover:opacity-90 text-white font-bold text-xs rounded-component shadow-panel"
+              >
+                Save Exam Target
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Empty State when zero exams */}
+      {data.exams.length === 0 && (
+        <div className="card-kopy p-12 border-2 border-dashed border-app-line text-center space-y-4 max-w-xl mx-auto my-12 animate-in fade-in">
+          <div className="w-16 h-16 rounded-full bg-app-accent/20 border border-app-accent/40 flex items-center justify-center text-app-accent mx-auto">
+            <CalendarClock className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-app-ink">No Examination Dates Configured</h3>
+            <p className="text-xs text-app-muted mt-1 max-w-md mx-auto leading-relaxed">
+              Add upcoming semester or competitive examination dates to activate live countdown telemetry and target readiness metrics.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={() => setIsAddingExam(true)}
+              className="px-5 py-2.5 bg-app-accent hover:opacity-90 text-white font-bold text-xs rounded-component shadow-panel flex items-center gap-2 mx-auto"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Your First Exam Target</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Hero: Nearest Upcoming Theory Exam */}
       {nextTheoryExam && heroCountdown && (

@@ -27,6 +27,7 @@ import { SYLLABUS_METADATA } from '../data/syllabusMetadata';
 export const StudyPlanner: React.FC = () => {
   const {
     data,
+    updateSubjects,
     addModule,
     addTopic,
     editTopic,
@@ -39,6 +40,9 @@ export const StudyPlanner: React.FC = () => {
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('sub-cn');
   const [newModuleName, setNewModuleName] = useState<string>('');
   const [isAddingModule, setIsAddingModule] = useState<boolean>(false);
+  const [isAddingSubject, setIsAddingSubject] = useState<boolean>(false);
+  const [newSubCode, setNewSubCode] = useState<string>('');
+  const [newSubName, setNewSubName] = useState<string>('');
 
   // New topic form state
   const [activeModuleForTopic, setActiveModuleForTopic] = useState<string | null>(null);
@@ -97,6 +101,33 @@ export const StudyPlanner: React.FC = () => {
     await addModule(currentSubject.id, newModuleName.trim());
     setNewModuleName('');
     setIsAddingModule(false);
+  };
+
+  const handleAddSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSubName.trim() || !newSubCode.trim() || !data) return;
+    const newSub: any = {
+      id: `sub-${Date.now()}`,
+      code: newSubCode.trim().toUpperCase(),
+      name: newSubName.trim(),
+      courseCode: newSubCode.trim().toUpperCase(),
+      semester: 'S1',
+      credits: 4,
+      color: '#8b5cf6',
+      modules: [
+        {
+          id: `mod-${Date.now()}-1`,
+          moduleNumber: 1,
+          name: 'Module 1: Fundamentals',
+          topics: [],
+        },
+      ],
+    };
+    await updateSubjects([...data.subjects, newSub]);
+    setSelectedSubjectId(newSub.id);
+    setNewSubCode('');
+    setNewSubName('');
+    setIsAddingSubject(false);
   };
 
   const handleCreateTopic = async (e: React.FormEvent) => {
@@ -165,8 +196,16 @@ export const StudyPlanner: React.FC = () => {
         {/* Actions & Overall progress */}
         <div className="flex items-center space-x-3">
           <button
+            onClick={() => setIsAddingSubject(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-app-surface hover:bg-app-hover border border-app-line text-app-ink rounded-component text-xs font-semibold shadow-panel transition-all"
+          >
+            <Plus className="w-3.5 h-3.5 text-app-accent" />
+            <span>Add Subject</span>
+          </button>
+
+          <button
             onClick={() => setIsPdfImportOpen(true)}
-            className="flex items-center space-x-1.5 px-3 py-2 bg-app-accent/15 hover:bg-app-accent/25 border border-app-accent/30 text-app-accent rounded-component text-xs font-semibold shadow-panel transition-all"
+            className="flex items-center space-x-1.5 px-3 py-2 bg-app-accent hover:opacity-90 text-white rounded-component text-xs font-semibold shadow-panel transition-all"
             title="Import Syllabus or Timetable from PDF"
           >
             <Upload className="w-3.5 h-3.5" />
@@ -190,8 +229,90 @@ export const StudyPlanner: React.FC = () => {
         </div>
       </div>
 
-      {/* Six Subjects Dashboard Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+      {/* Add Subject Inline Form Modal */}
+      {isAddingSubject && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <form onSubmit={handleAddSubject} className="bg-app-surface border border-app-line rounded-card p-5 max-w-md w-full space-y-4 shadow-panel">
+            <div className="flex items-center justify-between border-b border-app-line pb-2">
+              <h3 className="text-xs font-bold text-app-ink uppercase tracking-wider font-mono">Add New Study Subject</h3>
+              <button type="button" onClick={() => setIsAddingSubject(false)} className="text-app-muted hover:text-app-ink">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs font-mono text-app-muted block mb-1">Subject Code</label>
+              <input
+                type="text"
+                value={newSubCode}
+                onChange={(e) => setNewSubCode(e.target.value)}
+                placeholder="e.g. CS301"
+                required
+                className="w-full px-3 py-2 bg-app-bg border border-app-line rounded-component text-xs text-app-ink uppercase font-mono"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-mono text-app-muted block mb-1">Subject Name</label>
+              <input
+                type="text"
+                value={newSubName}
+                onChange={(e) => setNewSubName(e.target.value)}
+                placeholder="e.g. Operating Systems"
+                required
+                className="w-full px-3 py-2 bg-app-bg border border-app-line rounded-component text-xs text-app-ink font-semibold"
+              />
+            </div>
+            <div className="flex justify-end gap-2 pt-2 border-t border-app-line">
+              <button
+                type="button"
+                onClick={() => setIsAddingSubject(false)}
+                className="px-3 py-1.5 text-xs text-app-muted hover:text-app-ink"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 bg-app-accent hover:opacity-90 text-white font-bold text-xs rounded-component shadow-panel"
+              >
+                Create Subject
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Empty State when zero subjects */}
+      {data.subjects.length === 0 ? (
+        <div className="card-kopy p-12 border-2 border-dashed border-app-line text-center space-y-4 max-w-xl mx-auto my-12 animate-in fade-in">
+          <div className="w-16 h-16 rounded-full bg-app-accent/20 border border-app-accent/40 flex items-center justify-center text-app-accent mx-auto">
+            <BookOpen className="w-8 h-8" />
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-app-ink">No Subjects in Your Planner</h3>
+            <p className="text-xs text-app-muted mt-1 max-w-md mx-auto leading-relaxed">
+              STUDY COMMAND starts completely clean. Upload your university syllabus PDF to automatically extract subjects and modules, or add your first subject manually.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => setIsPdfImportOpen(true)}
+              className="px-5 py-2.5 bg-app-accent hover:opacity-90 text-white font-bold text-xs rounded-component shadow-panel flex items-center gap-2"
+            >
+              <Upload className="w-4 h-4" />
+              <span>Import Syllabus PDF</span>
+            </button>
+            <button
+              onClick={() => setIsAddingSubject(true)}
+              className="px-4 py-2.5 bg-app-surface hover:bg-app-hover border border-app-line text-app-ink font-semibold text-xs rounded-component flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4 text-app-accent" />
+              <span>Add Subject Manually</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Subjects Dashboard Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {data.subjects.map((subj) => {
           const isSelected = subj.id === selectedSubjectId;
           let sTot = 0;
@@ -563,6 +684,8 @@ export const StudyPlanner: React.FC = () => {
             })}
           </div>
         </div>
+      )}
+      </>
       )}
 
       {/* Add Topic Modal */}

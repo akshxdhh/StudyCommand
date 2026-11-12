@@ -13,7 +13,8 @@ import {
   TrendingUp,
   Brain,
   AlertTriangle,
-  Lightbulb
+  Lightbulb,
+  Upload
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -126,8 +127,14 @@ export const Dashboard: React.FC = () => {
               <span className="text-lg">{activeProfile.avatar || '⚡'}</span>
             </h2>
             <p className="text-xs text-app-muted mt-1 max-w-xl leading-relaxed">
-              {activeProfile.majorOrCourse ? `${activeProfile.majorOrCourse} • ` : ''}Upcoming core target: <strong className="text-app-ink">{nextExam?.subjectName} ({nextExam?.subjectCode})</strong> in {examCountdown?.days} days.
-              Maintain consistent high-focus blocks.
+              {activeProfile.majorOrCourse ? `${activeProfile.majorOrCourse} • ` : ''}
+              {nextExam ? (
+                <>
+                  Upcoming core target: <strong className="text-app-ink">{nextExam.subjectName} ({nextExam.subjectCode})</strong> in {examCountdown?.days ?? 0} days. Maintain consistent high-focus blocks.
+                </>
+              ) : (
+                'Configure your syllabus and upcoming exam dates to activate tracking.'
+              )}
             </p>
           </div>
 
@@ -142,6 +149,32 @@ export const Dashboard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Empty State Banner (If zero subjects in planner) */}
+      {data.subjects.length === 0 && (
+        <div className="card-kopy p-6 border-2 border-dashed border-app-accent/40 bg-app-accent/5 flex flex-col sm:flex-row items-center justify-between gap-4 animate-in fade-in">
+          <div className="flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-full bg-app-accent/20 flex items-center justify-center text-app-accent shrink-0">
+              <BookOpen className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-app-ink">Your Study Planner is Clean & Empty</h3>
+              <p className="text-xs text-app-muted mt-0.5">
+                Ready to prepare for your exams? Import a university syllabus PDF or add subjects manually to get started.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setActiveTab('planner')}
+              className="px-4 py-2 bg-app-accent hover:opacity-90 text-white font-bold text-xs rounded-component shadow-panel flex items-center gap-1.5"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Import Syllabus / Add Subject</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Lab Exam Alert Card (If Upcoming) */}
       {recommendations.labAlert && (

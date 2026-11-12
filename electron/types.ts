@@ -113,14 +113,34 @@ export interface AppearanceSettings {
 
 export type SupportedLanguage = 'en' | 'es' | 'ml' | 'hi';
 
+export interface AcademicInfo {
+  level: string; // 'high_school' | 'undergraduate' | 'postgraduate' | 'competitive_exam' | 'other'
+  institution?: string;
+  course?: string;
+  department?: string;
+  semester?: string;
+  examSystem?: string;
+}
+
 export interface UserProfile {
   id: string;
   name: string;
   avatar: string; // Emoji or preset identifier
+  academicInfo?: AcademicInfo;
   majorOrCourse?: string; // e.g. "B.Tech Computer Science (S5)"
   targetExamDate?: string; // e.g. "2026-11-23"
   dailyGoalHours?: number; // e.g. 6
   language: SupportedLanguage;
+  subjects?: Subject[];
+  exams?: Exam[];
+  timetable?: TimetableSlot[];
+  dailyRecords?: Record<string, DailySessionRecord[]>;
+  focusLogs?: FocusSessionLog[];
+  presets?: SessionPreset[];
+  activePresetId?: string;
+  focusSettings?: FocusV3Settings;
+  onboardingCompleted?: boolean;
+  tutorialCompleted?: boolean;
   createdAt: string;
 }
 
@@ -216,6 +236,13 @@ export interface ElectronAPI {
   moveToDisplay: (displayId: number) => Promise<boolean>;
   selectPdfFile: () => Promise<string | null>;
   parsePdfFile: (filePath?: string) => Promise<{ success: boolean; text?: string; numpages?: number; error?: string; filename?: string }>;
+  saveUploadedPdf?: (filename: string, fileBufferBase64: string) => Promise<{ success: boolean; savedPath?: string; error?: string }>;
+  
+  // Storage & Cache management
+  getCacheSize?: () => Promise<number>;
+  clearCache?: () => Promise<{ success: boolean; bytesCleared: number }>;
+  clearUserData?: (options: { profileOnly?: boolean; profileId?: string }) => Promise<{ success: boolean }>;
+  factoryReset?: () => Promise<{ success: boolean }>;
   
   onNotificationClicked: (callback: () => void) => () => void;
   onStoreUpdated: (callback: (data: AppDataStore) => void) => () => void;

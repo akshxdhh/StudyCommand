@@ -24,7 +24,10 @@ import {
   Edit2,
   Info,
   Check,
-  ShieldCheck
+  ShieldCheck,
+  HelpCircle,
+  HardDrive,
+  RefreshCw
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -59,12 +62,25 @@ export const Settings: React.FC = () => {
     activePreset,
     selectPreset,
     updatePreset,
+    startTutorial,
+    getCacheSize,
+    clearCache,
+    clearCurrentProfileData,
+    clearAllProfilesData,
+    factoryResetApp,
   } = useApp();
 
   const [notificationStatusMsg, setNotificationStatusMsg] = useState<string>('');
   const [dataStatusMsg, setDataStatusMsg] = useState<string>('');
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
   const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
+
+  // Storage and cache state
+  const [cacheBytes, setCacheBytes] = useState<number | null>(null);
+  const [showClearProfileConfirm, setShowClearProfileConfirm] = useState<boolean>(false);
+  const [showClearAllConfirm, setShowClearAllConfirm] = useState<boolean>(false);
+  const [showFactoryResetStep1, setShowFactoryResetStep1] = useState<boolean>(false);
+  const [showFactoryResetStep2, setShowFactoryResetStep2] = useState<boolean>(false);
 
   // New Profile Form
   const [showNewProfileForm, setShowNewProfileForm] = useState<boolean>(false);
@@ -922,39 +938,96 @@ export const Settings: React.FC = () => {
           </div>
         </div>
 
-        {/* SECTION 5.5: ABOUT STUDY COMMAND */}
-        <div className="card-kopy p-5 flex items-center justify-between">
+        {/* SECTION 5.5: ABOUT STUDY COMMAND & INTERACTIVE TOUR */}
+        <div className="card-kopy p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
               <Info className="w-4 h-4 text-app-accent" />
-              <span>ABOUT STUDY COMMAND</span>
+              <span>ABOUT STUDY COMMAND & INTERACTIVE TOUR</span>
             </div>
             <p className="text-xs text-app-muted mt-0.5">
-              Version 3.0.0 Production Release • Offline Engine • Open Source MIT License
+              Version 3.0.0 Production Release &bull; Offline Architecture &bull; Open Source MIT License
             </p>
           </div>
-          <button
-            onClick={() => setShowAboutModal(true)}
-            className="px-4 py-2 bg-app-accent hover:opacity-90 text-white font-semibold text-xs rounded-component shadow-panel transition-all"
-          >
-            View About & License
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => startTutorial()}
+              className="px-3.5 py-2 bg-app-surface hover:bg-app-hover border border-app-line text-app-ink font-semibold text-xs rounded-component transition-all flex items-center gap-1.5"
+            >
+              <HelpCircle className="w-3.5 h-3.5 text-app-accent" />
+              <span>Replay Application Tour</span>
+            </button>
+            <button
+              onClick={() => setShowAboutModal(true)}
+              className="px-4 py-2 bg-app-accent hover:opacity-90 text-white font-semibold text-xs rounded-component shadow-panel transition-all"
+            >
+              View About & License
+            </button>
+          </div>
         </div>
 
-        {/* SECTION 6: LOCAL DATA & BACKUP MANAGEMENT */}
+        {/* SECTION 6: LOCAL STORAGE & DATA MANAGEMENT */}
         <div className="card-kopy p-5 space-y-4">
           <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
-            <Download className="w-4 h-4 text-app-accent" />
-            <span>DATA STORAGE & BACKUP MANAGEMENT</span>
+            <HardDrive className="w-4 h-4 text-app-accent" />
+            <span>STORAGE, CACHE & DATA MANAGEMENT</span>
           </div>
+          <p className="text-xs text-app-muted">
+            Manage your offline cache, isolate profile datasets, export secure backups, or perform a clean factory reset.
+          </p>
 
           {dataStatusMsg && (
-            <div className="p-3 rounded-component bg-app-accent/10 border border-app-accent/30 text-xs text-app-accent font-mono">
+            <div className="p-3 rounded-component bg-app-accent/10 border border-app-accent/30 text-xs text-app-accent font-mono animate-in fade-in">
               {dataStatusMsg}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* Cache Management Row */}
+          <div className="p-4 rounded-component bg-app-bg border border-app-line flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-bold text-app-ink flex items-center gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5 text-app-accent" />
+                <span>Application Cache Management</span>
+              </div>
+              <p className="text-[11px] text-app-muted mt-0.5">
+                {cacheBytes !== null
+                  ? `Current Chromium storage cache: ${(cacheBytes / (1024 * 1024)).toFixed(2)} MB`
+                  : 'Inspect and purge temporary browser/DOM cache files to reclaim disk space.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={async () => {
+                  const bytes = await getCacheSize();
+                  setCacheBytes(bytes);
+                  setDataStatusMsg(`Current cache size: ${(bytes / (1024 * 1024)).toFixed(2)} MB (${bytes.toLocaleString()} bytes).`);
+                  setTimeout(() => setDataStatusMsg(''), 5000);
+                }}
+                className="px-3 py-1.5 bg-app-surface hover:bg-app-hover border border-app-line text-app-ink text-xs font-semibold rounded-component transition-colors"
+              >
+                Inspect Size
+              </button>
+              <button
+                onClick={async () => {
+                  setDataStatusMsg('Clearing cache...');
+                  const res = await clearCache();
+                  if (res.success) {
+                    setCacheBytes(0);
+                    setDataStatusMsg(`Cache successfully purged! Reclaimed ${(res.bytesCleared / 1024).toFixed(1)} KB.`);
+                  } else {
+                    setDataStatusMsg('Failed to clear application cache.');
+                  }
+                  setTimeout(() => setDataStatusMsg(''), 5000);
+                }}
+                className="px-3 py-1.5 bg-app-accent hover:opacity-90 text-white text-xs font-semibold rounded-component shadow-panel transition-all"
+              >
+                Clear Cache Now
+              </button>
+            </div>
+          </div>
+
+          {/* Backup & Reset Actions Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <button
               onClick={handleExport}
               className="flex items-center justify-center space-x-2 p-3 rounded-component bg-app-bg hover:bg-app-hover text-app-ink text-xs font-semibold border border-app-line transition-colors"
@@ -972,42 +1045,125 @@ export const Settings: React.FC = () => {
             </button>
 
             <button
-              onClick={() => setShowResetConfirm(true)}
+              onClick={() => setShowClearProfileConfirm(true)}
+              className="flex items-center justify-center space-x-2 p-3 rounded-component bg-app-warn/10 hover:bg-app-warn/20 text-app-warn text-xs font-semibold border border-app-warn/30 transition-colors"
+            >
+              <Trash2 className="w-4 h-4 text-app-warn" />
+              <span>Clear Profile Data</span>
+            </button>
+
+            <button
+              onClick={() => setShowFactoryResetStep1(true)}
               className="flex items-center justify-center space-x-2 p-3 rounded-component bg-app-danger/10 hover:bg-app-danger/20 text-app-danger text-xs font-semibold border border-app-danger/30 transition-colors"
             >
               <RotateCcw className="w-4 h-4 text-app-danger" />
-              <span>Reset to Defaults</span>
+              <span>Factory Reset App</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Reset Confirmation Dialog */}
-      {showResetConfirm && (
+      {/* Clear Current Profile Confirmation Dialog */}
+      {showClearProfileConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="max-w-md w-full bg-app-surface border border-app-danger/40 rounded-card p-5 space-y-4 shadow-panel">
-            <div className="flex items-center space-x-2.5 text-app-danger font-bold font-mono text-sm">
+          <div className="max-w-md w-full bg-app-surface border border-app-warn/40 rounded-card p-5 space-y-4 shadow-panel">
+            <div className="flex items-center space-x-2.5 text-app-warn font-bold font-mono text-sm">
               <AlertTriangle className="w-5 h-5 shrink-0" />
-              <span>CONFIRM DATA RESET</span>
+              <span>CLEAR CURRENT PROFILE DATA</span>
             </div>
             <p className="text-xs text-app-ink leading-relaxed">
-              Are you sure you want to reset all subjects, syllabus topics, exams, timetable, and appearance settings back to defaults? This action cannot be undone.
+              Are you sure you want to clear all subjects, syllabus topics, timetable, and study records for <strong>{activeProfile.name}</strong>? Other profiles and global theme settings will remain intact.
             </p>
             <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-app-line">
               <button
-                onClick={() => setShowResetConfirm(false)}
+                onClick={() => setShowClearProfileConfirm(false)}
                 className="px-3.5 py-1.5 rounded-component text-xs text-app-muted hover:text-app-ink"
               >
                 Cancel
               </button>
               <button
                 onClick={async () => {
-                  await resetToDefaults();
-                  setShowResetConfirm(false);
+                  await clearCurrentProfileData();
+                  setShowClearProfileConfirm(false);
+                  setDataStatusMsg(`Cleared all study data for ${activeProfile.name}.`);
+                  setTimeout(() => setDataStatusMsg(''), 5000);
+                }}
+                className="px-4 py-1.5 rounded-component text-xs font-semibold bg-app-warn text-white shadow-panel"
+              >
+                Yes, Clear Profile Data
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Factory Reset Step 1: Warning + Backup Offer */}
+      {showFactoryResetStep1 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="max-w-md w-full bg-app-surface border border-app-danger/40 rounded-card p-5 space-y-4 shadow-panel">
+            <div className="flex items-center space-x-2.5 text-app-danger font-bold font-mono text-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0" />
+              <span>FACTORY RESET: STEP 1 OF 2</span>
+            </div>
+            <p className="text-xs text-app-ink leading-relaxed">
+              Factory reset will permanently delete all user profiles, syllabus data, timetables, study records, and custom appearance settings. The application will restart into the clean first-launch onboarding wizard.
+            </p>
+            <div className="p-3 rounded-component bg-app-bg border border-app-line flex items-center justify-between">
+              <span className="text-xs text-app-muted">Would you like to export a backup JSON first?</span>
+              <button
+                onClick={handleExport}
+                className="px-3 py-1 bg-app-surface border border-app-line hover:bg-app-hover text-app-ink text-xs font-semibold rounded"
+              >
+                Export Backup
+              </button>
+            </div>
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-app-line">
+              <button
+                onClick={() => setShowFactoryResetStep1(false)}
+                className="px-3.5 py-1.5 rounded-component text-xs text-app-muted hover:text-app-ink"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowFactoryResetStep1(false);
+                  setShowFactoryResetStep2(true);
                 }}
                 className="px-4 py-1.5 rounded-component text-xs font-semibold bg-app-danger text-white shadow-panel"
               >
-                Yes, Reset All Data
+                Proceed to Final Confirmation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Factory Reset Step 2: Final Confirmation */}
+      {showFactoryResetStep2 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="max-w-md w-full bg-app-surface border-2 border-app-danger rounded-card p-5 space-y-4 shadow-panel">
+            <div className="flex items-center space-x-2.5 text-app-danger font-bold font-mono text-sm">
+              <AlertTriangle className="w-5 h-5 shrink-0 animate-bounce" />
+              <span>FINAL CONFIRMATION: COMPLETE FACTORY RESET</span>
+            </div>
+            <p className="text-xs text-app-ink leading-relaxed font-semibold">
+              This action CANNOT be reversed. All data will be purged immediately.
+            </p>
+            <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-app-line">
+              <button
+                onClick={() => setShowFactoryResetStep2(false)}
+                className="px-3.5 py-1.5 rounded-component text-xs text-app-muted hover:text-app-ink"
+              >
+                Abort
+              </button>
+              <button
+                onClick={async () => {
+                  setShowFactoryResetStep2(false);
+                  await factoryResetApp();
+                }}
+                className="px-5 py-2 rounded-component text-xs font-bold bg-app-danger text-white shadow-panel"
+              >
+                YES, PERFORM FULL FACTORY RESET
               </button>
             </div>
           </div>

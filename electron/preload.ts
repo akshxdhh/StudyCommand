@@ -30,6 +30,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   selectPdfFile: (): Promise<string | null> => ipcRenderer.invoke('pdf:selectFile'),
   parsePdfFile: (filePath?: string): Promise<{ success: boolean; text?: string; numpages?: number; error?: string; filename?: string }> =>
     ipcRenderer.invoke('pdf:parseFile', filePath),
+  saveUploadedPdf: (filename: string, fileBufferBase64: string): Promise<{ success: boolean; savedPath?: string; error?: string }> =>
+    ipcRenderer.invoke('pdf:saveUploadedPdf', filename, fileBufferBase64),
+
+  // Storage & Cache management
+  getCacheSize: (): Promise<number> => ipcRenderer.invoke('storage:getCacheSize'),
+  clearCache: (): Promise<{ success: boolean; bytesCleared: number }> => ipcRenderer.invoke('storage:clearCache'),
+  clearUserData: (options: { profileOnly?: boolean; profileId?: string }): Promise<{ success: boolean }> =>
+    ipcRenderer.invoke('storage:clearUserData', options),
+  factoryReset: (): Promise<{ success: boolean }> => ipcRenderer.invoke('storage:factoryReset'),
 
   onNotificationClicked: (callback: () => void): (() => void) => {
     const handler = () => callback();

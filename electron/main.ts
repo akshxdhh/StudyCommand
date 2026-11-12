@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, screen, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { StoreManager } from './store';
@@ -402,6 +402,67 @@ function setupIPC(): void {
     }
   });
 
+  ipcMain.handle('pdf:saveUploadedPdf', async (_event, filename: string, fileBufferBase64: string) => {
+    try {
+      const uploadsDir = path.join(app.getPath('userData'), 'uploads');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const safeFilename = `${Date.now()}_${filename.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const targetPath = path.join(uploadsDir, safeFilename);
+      const buffer = Buffer.from(fileBufferBase64, 'base64');
+      fs.writeFileSync(targetPath, buffer);
+      return { success: true, savedPath: targetPath };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('storage:getCacheSize', async () => {
+    try {
+      const bytes = await session.defaultSession.getCacheSize();
+      return bytes;
+    } catch {
+      return 0;
+    }
+  });
+
+  ipcMain.handle('storage:clearCache', async () => {
+    try {
+      const before = await session.defaultSession.getCacheSize();
+      await session.defaultSession.clearCache();
+      const after = await session.defaultSession.getCacheSize();
+      return { success: true, bytesCleared: Math.max(0, before - after) };
+    } catch (err: any) {
+      return { success: false, bytesCleared: 0, error: err.message };
+    }
+  });
+
+  ipcMain.handle('storage:clearUserData', async (_event, options: { profileOnly?: boolean; profileId?: string }) => {
+    try {
+      const updated = storeManager.clearUserData(options);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('store-updated', updated);
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('storage:factoryReset', async () => {
+    try {
+      await session.defaultSession.clearCache();
+      const fresh = storeManager.factoryReset();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('store-updated', fresh);
+      }
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.on('window:minimize', () => {
     mainWindow?.minimize();
   });
@@ -436,6 +497,20 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(() => {
+  // Configure Media Permissions (Webcam & Microphone for Voice Assistant & Engagement Monitor)
+  session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(true);
+    }
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
+    if (permission === 'media') return true;
+    return true;
+  });
+
   setupIPC();
   createWindow();
   setupTray();

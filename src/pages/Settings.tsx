@@ -16,7 +16,15 @@ import {
   Timer,
   Palette,
   Eye,
-  Sliders
+  Sliders,
+  Globe,
+  Users,
+  Plus,
+  Trash2,
+  Edit2,
+  Info,
+  Check,
+  ShieldCheck
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import {
@@ -24,9 +32,13 @@ import {
   AccentPalette,
   UIDensity,
   ComponentStyling,
-  AppearanceSettings
+  AppearanceSettings,
+  SupportedLanguage,
+  UserProfile,
+  SessionPreset
 } from '../types';
 import { PALETTE_COLORS, applyTheme } from '../utils/theme';
+import { AboutModal } from '../components/AboutModal';
 
 export const Settings: React.FC = () => {
   const {
@@ -38,11 +50,27 @@ export const Settings: React.FC = () => {
     exportData,
     importData,
     testNotification,
+    language,
+    setLanguage,
+    activeProfile,
+    switchProfile,
+    createProfile,
+    deleteProfile,
+    activePreset,
+    selectPreset,
+    updatePreset,
   } = useApp();
 
   const [notificationStatusMsg, setNotificationStatusMsg] = useState<string>('');
   const [dataStatusMsg, setDataStatusMsg] = useState<string>('');
   const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [showAboutModal, setShowAboutModal] = useState<boolean>(false);
+
+  // New Profile Form
+  const [showNewProfileForm, setShowNewProfileForm] = useState<boolean>(false);
+  const [newProfileName, setNewProfileName] = useState<string>('');
+  const [newProfileCourse, setNewProfileCourse] = useState<string>('');
+  const [newProfileDate, setNewProfileDate] = useState<string>('');
 
   // Live preview state for Appearance
   const [previewAppearance, setPreviewAppearance] = useState<AppearanceSettings | null>(null);
@@ -144,6 +172,213 @@ export const Settings: React.FC = () => {
       </div>
 
       <div className="space-y-6 max-w-4xl">
+        {/* SECTION 0A: USER PROFILES & PERSONALIZATION */}
+        <div className="card-kopy p-5 space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
+              <Users className="w-4 h-4 text-app-accent" />
+              <span>USER PROFILES & PERSONALIZATION</span>
+            </div>
+            <button
+              onClick={() => setShowNewProfileForm(!showNewProfileForm)}
+              className="flex items-center gap-1.5 px-3 py-1 bg-app-accent/15 hover:bg-app-accent/25 border border-app-accent/30 text-app-accent rounded-component text-xs font-semibold transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>{showNewProfileForm ? 'Cancel' : 'New Profile'}</span>
+            </button>
+          </div>
+
+          {showNewProfileForm && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!newProfileName.trim()) return;
+                await createProfile({
+                  name: newProfileName.trim(),
+                  avatar: '⭐',
+                  majorOrCourse: newProfileCourse.trim() || undefined,
+                  targetExamDate: newProfileDate.trim() || undefined,
+                  language,
+                });
+                setNewProfileName('');
+                setNewProfileCourse('');
+                setNewProfileDate('');
+                setShowNewProfileForm(false);
+              }}
+              className="p-3.5 bg-app-bg rounded-component border border-app-line space-y-3"
+            >
+              <div className="text-xs font-bold text-app-ink font-mono uppercase">Add User Profile</div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div>
+                  <label className="text-[10px] font-mono text-app-muted block mb-1">Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={newProfileName}
+                    onChange={(e) => setNewProfileName(e.target.value)}
+                    placeholder="e.g. Commander"
+                    className="w-full px-2.5 py-1.5 bg-app-surface border border-app-line rounded-component text-xs text-app-ink font-semibold focus:outline-none focus:border-app-accent"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-app-muted block mb-1">Degree / Course</label>
+                  <input
+                    type="text"
+                    value={newProfileCourse}
+                    onChange={(e) => setNewProfileCourse(e.target.value)}
+                    placeholder="e.g. B.Tech Computer Science"
+                    className="w-full px-2.5 py-1.5 bg-app-surface border border-app-line rounded-component text-xs text-app-ink focus:outline-none focus:border-app-accent"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] font-mono text-app-muted block mb-1">Target Exam Date</label>
+                  <input
+                    type="date"
+                    value={newProfileDate}
+                    onChange={(e) => setNewProfileDate(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-app-surface border border-app-line rounded-component text-xs text-app-ink font-mono focus:outline-none focus:border-app-accent"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-app-accent hover:opacity-90 text-white rounded-component text-xs font-semibold shadow-panel"
+                >
+                  Save Profile
+                </button>
+              </div>
+            </form>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {settings?.profiles?.map((p) => {
+              const isActive = p.id === activeProfile.id;
+              return (
+                <div
+                  key={p.id}
+                  className={`p-3.5 rounded-card border transition-all flex items-center justify-between ${
+                    isActive
+                      ? 'bg-app-bg border-app-accent shadow-panel ring-1 ring-app-accent/50'
+                      : 'bg-app-bg/50 border-app-line hover:border-app-line2'
+                  }`}
+                >
+                  <div className="flex items-center space-x-3 overflow-hidden">
+                    <span className="text-2xl">{p.avatar || '⚡'}</span>
+                    <div className="overflow-hidden">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-app-ink truncate">{p.name}</span>
+                        {isActive && (
+                          <span className="text-[9px] px-1.5 py-0.2 rounded bg-app-accent text-white font-mono uppercase font-bold">
+                            Active
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-app-muted truncate">
+                        {p.majorOrCourse || 'Personal Study Track'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {!isActive && (
+                      <button
+                        onClick={() => switchProfile(p.id)}
+                        className="px-2.5 py-1 bg-app-surface hover:bg-app-hover border border-app-line text-app-ink rounded-component text-xs font-medium transition-colors"
+                      >
+                        Switch
+                      </button>
+                    )}
+                    {settings.profiles.length > 1 && (
+                      <button
+                        onClick={() => deleteProfile(p.id)}
+                        className="p-1 text-app-muted hover:text-app-danger transition-colors"
+                        title="Delete Profile"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SECTION 0B: LANGUAGE (i18n) */}
+        <div className="card-kopy p-5 space-y-3">
+          <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
+            <Globe className="w-4 h-4 text-app-accent" />
+            <span>APPLICATION LANGUAGE (i18n)</span>
+          </div>
+          <p className="text-xs text-app-muted">
+            Select your preferred display language for all menus, study prompts, voice assistant, and analytics.
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+            {[
+              { code: 'en' as SupportedLanguage, label: 'English', native: 'English' },
+              { code: 'es' as SupportedLanguage, label: 'Spanish', native: 'Español' },
+              { code: 'ml' as SupportedLanguage, label: 'Malayalam', native: 'മലയാളം' },
+              { code: 'hi' as SupportedLanguage, label: 'Hindi', native: 'हिन्दी' },
+            ].map(({ code, label, native }) => {
+              const isSelected = language === code;
+              return (
+                <button
+                  key={code}
+                  onClick={() => setLanguage(code)}
+                  className={`p-3 rounded-card border text-left transition-all ${
+                    isSelected
+                      ? 'bg-app-bg border-app-accent ring-1 ring-app-accent shadow-panel'
+                      : 'bg-app-bg/50 border-app-line hover:border-app-line2'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-app-ink">{label}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-app-accent" />}
+                  </div>
+                  <div className="text-[11px] text-app-muted font-mono mt-0.5">{native}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* SECTION 0C: STUDY & BREAK SESSION PRESETS */}
+        <div className="card-kopy p-5 space-y-3">
+          <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
+            <Timer className="w-4 h-4 text-app-accent" />
+            <span>STUDY & BREAK SESSION RHYTHM PRESETS</span>
+          </div>
+          <p className="text-xs text-app-muted">
+            Configure default sprint focus and recovery durations.
+          </p>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pt-1">
+            {settings?.presets?.map((p) => {
+              const isSelected = p.id === activePreset.id;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => selectPreset(p.id)}
+                  className={`p-3 rounded-card border text-left transition-all ${
+                    isSelected
+                      ? 'bg-app-bg border-app-accent ring-1 ring-app-accent shadow-panel'
+                      : 'bg-app-bg/50 border-app-line hover:border-app-line2'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-app-ink">{p.name}</span>
+                    {isSelected && <Check className="w-3.5 h-3.5 text-app-accent" />}
+                  </div>
+                  <div className="text-[11px] text-app-muted font-mono mt-0.5">
+                    {p.focusMinutes}m study / {p.breakMinutes}m break
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         {/* SECTION 1: APPEARANCE & THEME CUSTOMIZATION (kopy.site inspired) */}
         <div className="card-kopy p-5 space-y-5">
           <div className="flex items-center justify-between">
@@ -687,6 +922,25 @@ export const Settings: React.FC = () => {
           </div>
         </div>
 
+        {/* SECTION 5.5: ABOUT STUDY COMMAND */}
+        <div className="card-kopy p-5 flex items-center justify-between">
+          <div>
+            <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
+              <Info className="w-4 h-4 text-app-accent" />
+              <span>ABOUT STUDY COMMAND</span>
+            </div>
+            <p className="text-xs text-app-muted mt-0.5">
+              Version 3.0.0 Production Release • Offline Engine • Open Source MIT License
+            </p>
+          </div>
+          <button
+            onClick={() => setShowAboutModal(true)}
+            className="px-4 py-2 bg-app-accent hover:opacity-90 text-white font-semibold text-xs rounded-component shadow-panel transition-all"
+          >
+            View About & License
+          </button>
+        </div>
+
         {/* SECTION 6: LOCAL DATA & BACKUP MANAGEMENT */}
         <div className="card-kopy p-5 space-y-4">
           <div className="flex items-center space-x-2 text-sm font-bold text-app-ink font-sans">
@@ -759,6 +1013,9 @@ export const Settings: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* About Modal */}
+      <AboutModal isOpen={showAboutModal} onClose={() => setShowAboutModal(false)} />
     </div>
   );
 };

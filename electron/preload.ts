@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { AppDataStore } from './types';
+import { AppDataStore, DisplayInfo } from './types';
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getStoreData: (): Promise<AppDataStore> => ipcRenderer.invoke('store:get'),
@@ -22,6 +22,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   closeWindow: (): void => ipcRenderer.send('window:close'),
   quitApp: (): void => ipcRenderer.send('app:quit'),
 
+  // V3 Methods:
+  setFullScreen: (flag: boolean): Promise<boolean> => ipcRenderer.invoke('window:setFullScreen', flag),
+  isFullScreen: (): Promise<boolean> => ipcRenderer.invoke('window:isFullScreen'),
+  getDisplays: (): Promise<DisplayInfo[]> => ipcRenderer.invoke('desktop:getDisplays'),
+  moveToDisplay: (displayId: number): Promise<boolean> => ipcRenderer.invoke('desktop:moveToDisplay', displayId),
+  selectPdfFile: (): Promise<string | null> => ipcRenderer.invoke('pdf:selectFile'),
+  parsePdfFile: (filePath?: string): Promise<{ success: boolean; text?: string; numpages?: number; error?: string; filename?: string }> =>
+    ipcRenderer.invoke('pdf:parseFile', filePath),
+
   onNotificationClicked: (callback: () => void): (() => void) => {
     const handler = () => callback();
     ipcRenderer.on('notification-clicked', handler);
@@ -35,6 +44,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('store-updated', handler);
     return () => {
       ipcRenderer.removeListener('store-updated', handler);
+    };
+  },
+
+  onDistractionAlert: (callback: (data: { message: string }) => void): (() => void) => {
+    const handler = (_event: any, data: { message: string }) => callback(data);
+    ipcRenderer.on('focus:distraction-alert', handler);
+    return () => {
+      ipcRenderer.removeListener('focus:distraction-alert', handler);
     };
   },
 });

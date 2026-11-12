@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, dialog, shell, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { StoreManager } from './store';
@@ -311,6 +311,94 @@ function setupIPC(): void {
     } catch (err) {
       console.error('Failed to open external url:', err);
       return false;
+    }
+  });
+
+  // V3 IPC Handlers
+  ipcMain.handle('window:setFullScreen', async (_event, flag: boolean) => {
+    if (mainWindow) {
+      mainWindow.setFullScreen(flag);
+      return mainWindow.isFullScreen();
+    }
+    return false;
+  });
+
+  ipcMain.handle('window:isFullScreen', async () => {
+    return mainWindow?.isFullScreen() ?? false;
+  });
+
+  ipcMain.handle('desktop:getDisplays', async () => {
+    const displays = screen.getAllDisplays();
+    const primary = screen.getPrimaryDisplay();
+    return displays.map((d, index) => ({
+      id: d.id,
+      label: d.id === primary.id
+        ? `Display ${index + 1} (Primary - ${d.bounds.width}x${d.bounds.height})`
+        : `Display ${index + 1} (${d.bounds.width}x${d.bounds.height})`,
+      bounds: d.bounds,
+      workArea: d.workArea,
+      scaleFactor: d.scaleFactor,
+      isPrimary: d.id === primary.id,
+    }));
+  });
+
+  ipcMain.handle('desktop:moveToDisplay', async (_event, displayId: number) => {
+    if (!mainWindow) return false;
+    const displays = screen.getAllDisplays();
+    const target = displays.find((d) => d.id === displayId);
+    if (target) {
+      mainWindow.setBounds({
+        x: target.bounds.x + 40,
+        y: target.bounds.y + 40,
+        width: Math.min(1360, target.workArea.width - 80),
+        height: Math.min(860, target.workArea.height - 80),
+      });
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.handle('pdf:selectFile', async () => {
+    if (!mainWindow) return null;
+    const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: 'Select Syllabus or Timetable PDF',
+      filters: [{ name: 'PDF Documents', extensions: ['pdf'] }],
+      properties: ['openFile'],
+    });
+    if (canceled || !filePaths || filePaths.length === 0) return null;
+    return filePaths[0];
+  });
+
+  ipcMain.handle('pdf:parseFile', async (_event, filePathArg?: string) => {
+    let filePath = filePathArg;
+    if (!filePath) {
+      if (!mainWindow) return { success: false, error: 'No main window' };
+      const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+        title: 'Select Syllabus or Timetable PDF',
+        filters: [{ name: 'PDF Documents', extensions: ['pdf'] }],
+        properties: ['openFile'],
+      });
+      if (canceled || !filePaths || filePaths.length === 0) {
+        return { success: false, error: 'File selection canceled' };
+      }
+      filePath = filePaths[0];
+    }
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { success: false, error: `File not found: ${filePath}` };
+      }
+      const pdfBuffer = fs.readFileSync(filePath);
+      const pdfParse = require('pdf-parse');
+      const parsed = await pdfParse(pdfBuffer);
+      return {
+        success: true,
+        text: parsed.text,
+        numpages: parsed.numpages,
+        filename: path.basename(filePath),
+      };
+    } catch (err: any) {
+      console.error('Failed to parse PDF document:', err);
+      return { success: false, error: err.message || 'Failed to parse PDF document' };
     }
   });
 

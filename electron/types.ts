@@ -111,6 +111,49 @@ export interface AppearanceSettings {
   componentStyling: ComponentStyling;
 }
 
+export type SupportedLanguage = 'en' | 'es' | 'ml' | 'hi';
+
+export interface UserProfile {
+  id: string;
+  name: string;
+  avatar: string; // Emoji or preset identifier
+  majorOrCourse?: string; // e.g. "B.Tech Computer Science (S5)"
+  targetExamDate?: string; // e.g. "2026-11-23"
+  dailyGoalHours?: number; // e.g. 6
+  language: SupportedLanguage;
+  createdAt: string;
+}
+
+export interface SessionPreset {
+  id: string;
+  name: string;
+  focusMinutes: number;
+  breakMinutes: number;
+  isCustom?: boolean;
+}
+
+export interface FocusV3Settings {
+  fullscreenOnStart: boolean;
+  distractionShield: boolean;
+  engagementMonitor: boolean;
+  soundscape: 'none' | 'whitenoise' | 'rain' | 'binaural';
+  voiceAssistantEnabled: boolean;
+}
+
+export interface OnboardingState {
+  completed: boolean;
+  step: number;
+}
+
+export interface DisplayInfo {
+  id: number;
+  label: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  workArea: { x: number; y: number; width: number; height: number };
+  scaleFactor: number;
+  isPrimary: boolean;
+}
+
 export interface AppSettings {
   launchOnStartup: boolean;
   notificationsEnabled: boolean;
@@ -126,6 +169,16 @@ export interface AppSettings {
   theme: 'cyan' | 'blue' | 'purple' | 'emerald'; // Legacy theme key
   appearance: AppearanceSettings;
   minimizeToTrayOnClose: boolean;
+  
+  // V3 Additions:
+  language: SupportedLanguage;
+  activeProfileId: string;
+  profiles: UserProfile[];
+  activePresetId: string;
+  presets: SessionPreset[];
+  focusV3: FocusV3Settings;
+  onboarding: OnboardingState;
+  sidebarCollapsed: boolean;
 }
 
 export interface AppDataStore {
@@ -155,8 +208,18 @@ export interface ElectronAPI {
   maximizeWindow: () => void;
   closeWindow: () => void;
   quitApp: () => void;
+  
+  // V3 IPC extensions:
+  setFullScreen: (flag: boolean) => Promise<boolean>;
+  isFullScreen: () => Promise<boolean>;
+  getDisplays: () => Promise<DisplayInfo[]>;
+  moveToDisplay: (displayId: number) => Promise<boolean>;
+  selectPdfFile: () => Promise<string | null>;
+  parsePdfFile: (filePath?: string) => Promise<{ success: boolean; text?: string; numpages?: number; error?: string; filename?: string }>;
+  
   onNotificationClicked: (callback: () => void) => () => void;
   onStoreUpdated: (callback: (data: AppDataStore) => void) => () => void;
+  onDistractionAlert?: (callback: (data: { message: string }) => void) => () => void;
 }
 
 declare global {

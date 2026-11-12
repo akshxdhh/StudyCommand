@@ -34,6 +34,7 @@ export const Dashboard: React.FC = () => {
     markSessionSkipped,
     rescheduleSession,
     recommendations,
+    activeProfile,
   } = useApp();
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -120,12 +121,13 @@ export const Dashboard: React.FC = () => {
               <Calendar className="w-3.5 h-3.5" />
               <span>{formattedDate.toUpperCase()}</span>
             </div>
-            <h2 className="text-2xl font-bold text-app-ink tracking-tight font-sans">
-              {getGreeting(currentTime)}, Commander.
+            <h2 className="text-2xl font-bold text-app-ink tracking-tight font-sans flex items-center gap-2">
+              <span>{getGreeting(currentTime)}, {activeProfile.name}.</span>
+              <span className="text-lg">{activeProfile.avatar || '⚡'}</span>
             </h2>
             <p className="text-xs text-app-muted mt-1 max-w-xl leading-relaxed">
-              University exam preparation mode. Upcoming core target: <strong className="text-app-ink">{nextExam?.subjectName} ({nextExam?.subjectCode})</strong> in {examCountdown?.days} days.
-              Maintain consistent 30-minute high-focus blocks.
+              {activeProfile.majorOrCourse ? `${activeProfile.majorOrCourse} • ` : ''}Upcoming core target: <strong className="text-app-ink">{nextExam?.subjectName} ({nextExam?.subjectCode})</strong> in {examCountdown?.days} days.
+              Maintain consistent high-focus blocks.
             </p>
           </div>
 

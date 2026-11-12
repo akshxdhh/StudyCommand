@@ -21,12 +21,25 @@ import {
   MessageSquare,
   RefreshCw,
   X,
-  FileText
+  FileText,
+  Volume2,
+  VolumeX,
+  Shield,
+  ShieldCheck,
+  Maximize2,
+  Minimize2,
+  Video,
+  VideoOff,
+  Monitor,
+  AlertTriangle,
+  Clock
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { CircularProgress } from '../components/CircularProgress';
 import { formatSecondsToTimer } from '../utils/time';
 import { soundSynth } from '../utils/audio';
+import { soundscapeEngine } from '../utils/soundscapes';
+import { BUILT_IN_PRESETS, formatPresetLabel } from '../utils/presets';
 import {
   generateStudyPrompt,
   PromptCustomizationOptions,
@@ -35,10 +48,11 @@ import {
   StudyGoal,
   AnswerLength
 } from '../utils/promptGenerator';
-import { TopicStatus, Subject, Module, Topic } from '../types';
+import { TopicStatus, Subject, Module, Topic, SessionPreset } from '../types';
 
 type TimerMode = 'FOCUS' | 'SHORT_BREAK' | 'LONG_BREAK';
 type ScreenView = 'PREPARATION' | 'ACTIVE_TIMER';
+type SoundscapeType = 'none' | 'whitenoise' | 'rain' | 'binaural';
 
 export const FocusMode: React.FC = () => {
   const {
@@ -49,15 +63,27 @@ export const FocusMode: React.FC = () => {
     markSessionCompleted,
     setTopicStatus,
     triggerConfetti,
+    activePreset,
+    selectPreset,
+    isFullScreen,
+    toggleFullScreen,
+    displays,
+    moveToDisplay,
+    t,
   } = useApp();
 
   const settings = data?.settings;
-  const focusMin = settings?.focusDuration || 30;
-  const shortBreakMin = settings?.shortBreakDuration || 15;
-  const longBreakMin = settings?.longBreakDuration || 30;
+  const presetsList: SessionPreset[] = settings?.presets && settings.presets.length > 0
+    ? settings.presets
+    : BUILT_IN_PRESETS;
+
+  const currentPreset = presetsList.find((p) => p.id === settings?.activePresetId) || activePreset || presetsList[0];
+  const focusMin = currentPreset?.focusMinutes || settings?.focusDuration || 25;
+  const shortBreakMin = currentPreset?.breakMinutes || settings?.shortBreakDuration || 5;
+  const longBreakMin = settings?.longBreakDuration || 20;
   const longBreakInterval = settings?.longBreakInterval || 4;
 
-  // View state: 'PREPARATION' screen vs 'ACTIVE_TIMER' screen
+  // View state: 'PREPARATION' vs 'ACTIVE_TIMER'
   const [screenView, setScreenView] = useState<ScreenView>('PREPARATION');
 
   // Topic selection state
@@ -74,16 +100,24 @@ export const FocusMode: React.FC = () => {
     focusPreload?.topicTitle || ''
   );
 
-  // Prompt customization options & state
+  // Prompt customization state
   const [promptOptions, setPromptOptions] = useState<PromptCustomizationOptions>({
     ...DEFAULT_PROMPT_OPTIONS,
   });
   const [editablePrompt, setEditablePrompt] = useState<string>('');
   const [copiedToast, setCopiedToast] = useState<boolean>(false);
   const [showPromptModal, setShowPromptModal] = useState<boolean>(false);
-
-  // Completion modal state
   const [showCompletionModal, setShowCompletionModal] = useState<boolean>(false);
+
+  // V3 Features: Soundscape, Shield, Engagement Monitor
+  const [soundscape, setSoundscape] = useState<SoundscapeType>('none');
+  const [shieldActive, setShieldActive] = useState<boolean>(true);
+  const [distractionWarning, setDistractionWarning] = useState<string | null>(null);
+  const [engagementMonitor, setEngagementMonitor] = useState<boolean>(false);
+  const [engagementStatus, setEngagementStatus] = useState<'idle' | 'calibrating' | 'focused' | 'declined'>('idle');
+
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // Timer state
   const [mode, setMode] = useState<TimerMode>('FOCUS');
@@ -124,23 +158,14 @@ export const FocusMode: React.FC = () => {
     return currentModule.topics[0];
   }, [currentModule, selectedTopicId, customTopicTitle]);
 
-  // Synchronize when focusPreload arrives from Study Planner or Dashboard
+  // Preload sync
   useEffect(() => {
     if (focusPreload) {
-      if (focusPreload.subjectId) {
-        setSelectedSubjectId(focusPreload.subjectId);
-      }
-      if (focusPreload.moduleId) {
-        setSelectedModuleId(focusPreload.moduleId);
-      }
-      if (focusPreload.topicId) {
-        setSelectedTopicId(focusPreload.topicId);
-      }
-      if (focusPreload.topicTitle) {
-        setCustomTopicTitle(focusPreload.topicTitle);
-      }
+      if (focusPreload.subjectId) setSelectedSubjectId(focusPreload.subjectId);
+      if (focusPreload.moduleId) setSelectedModuleId(focusPreload.moduleId);
+      if (focusPreload.topicId) setSelectedTopicId(focusPreload.topicId);
+      if (focusPreload.topicTitle) setCustomTopicTitle(focusPreload.topicTitle);
 
-      // Automatically open the Preparation screen
       setScreenView('PREPARATION');
       setIsActive(false);
       targetEndTimeRef.current = null;
@@ -150,7 +175,7 @@ export const FocusMode: React.FC = () => {
     }
   }, [focusPreload, focusMin]);
 
-  // Auto-generate prompt whenever selected topic, module, subject, or prompt options change
+  // Auto-generate prompt
   useEffect(() => {
     if (currentSubject && currentModule && currentTopic) {
       const prompt = generateStudyPrompt(currentSubject, currentModule, currentTopic, promptOptions);
@@ -158,7 +183,65 @@ export const FocusMode: React.FC = () => {
     }
   }, [currentSubject, currentModule, currentTopic, promptOptions]);
 
-  // Switch between Focus, Short Break, and Long Break
+  // Soundscape audio management
+  useEffect(() => {
+    if (isActive && mode === 'FOCUS' && soundscape !== 'none') {
+      soundscapeEngine.play(soundscape);
+    } else {
+      soundscapeEngine.stop();
+    }
+    return () => {
+      soundscapeEngine.stop();
+    };
+  }, [isActive, mode, soundscape]);
+
+  // Distraction Shield: Window Blur Listener
+  useEffect(() => {
+    const handleWindowBlur = () => {
+      if (shieldActive && isActive && mode === 'FOCUS') {
+        setDistractionWarning('Focus Shield Alert: Return to your study session!');
+        setTimeout(() => setDistractionWarning(null), 4000);
+      }
+    };
+    window.addEventListener('blur', handleWindowBlur);
+    return () => window.removeEventListener('blur', handleWindowBlur);
+  }, [shieldActive, isActive, mode]);
+
+  // Engagement Monitor (Local Webcam Presence)
+  useEffect(() => {
+    if (engagementMonitor && isActive && mode === 'FOCUS') {
+      setEngagementStatus('calibrating');
+      navigator.mediaDevices
+        ?.getUserMedia({ video: { width: 160, height: 120 } })
+        .then((stream) => {
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            videoRef.current.play().catch(() => {});
+          }
+          setEngagementStatus('focused');
+        })
+        .catch((err) => {
+          console.warn('Webcam engagement declined or unavailable:', err);
+          setEngagementStatus('declined');
+        });
+    } else {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+      setEngagementStatus('idle');
+    }
+
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((t) => t.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [engagementMonitor, isActive, mode]);
+
+  // Switch timer modes
   const switchMode = (newMode: TimerMode) => {
     setIsActive(false);
     targetEndTimeRef.current = null;
@@ -199,10 +282,11 @@ export const FocusMode: React.FC = () => {
     };
   }, [isActive, remainingSeconds]);
 
-  // Handle completion of timer
+  // Handle completion
   const handleTimerComplete = async () => {
     setIsActive(false);
     targetEndTimeRef.current = null;
+    soundscapeEngine.stop();
 
     if (mode === 'FOCUS') {
       soundSynth.playCompleteFanfare();
@@ -216,7 +300,6 @@ export const FocusMode: React.FC = () => {
         });
       }
 
-      // Log session with topic associations
       await logFocusSession({
         type: 'FOCUS',
         durationMinutes: focusMin,
@@ -235,11 +318,8 @@ export const FocusMode: React.FC = () => {
 
       const nextCycle = completedCycles + 1;
       setCompletedCycles(nextCycle);
-
-      // Show completion modal to ask user for topic status update
       setShowCompletionModal(true);
 
-      // Queue break mode
       if (nextCycle % longBreakInterval === 0) {
         switchMode('LONG_BREAK');
       } else {
@@ -269,7 +349,6 @@ export const FocusMode: React.FC = () => {
     }
   };
 
-  // Start Focus Session from Preparation Screen
   const handleStartSession = () => {
     setScreenView('ACTIVE_TIMER');
     setMode('FOCUS');
@@ -286,16 +365,21 @@ export const FocusMode: React.FC = () => {
   const handlePause = () => {
     setIsActive(false);
     targetEndTimeRef.current = null;
+    soundscapeEngine.stop();
   };
 
   const handleResume = () => {
     targetEndTimeRef.current = Date.now() + remainingSeconds * 1000;
     setIsActive(true);
+    if (soundscape !== 'none') {
+      soundscapeEngine.play(soundscape);
+    }
   };
 
   const handleReset = () => {
     setIsActive(false);
     targetEndTimeRef.current = null;
+    soundscapeEngine.stop();
     let mins = focusMin;
     if (mode === 'SHORT_BREAK') mins = shortBreakMin;
     if (mode === 'LONG_BREAK') mins = longBreakMin;
@@ -304,6 +388,7 @@ export const FocusMode: React.FC = () => {
   };
 
   const handleSkip = () => {
+    soundscapeEngine.stop();
     if (mode === 'FOCUS') {
       const nextCycle = completedCycles + 1;
       setCompletedCycles(nextCycle);
@@ -317,28 +402,26 @@ export const FocusMode: React.FC = () => {
     }
   };
 
-  // Keyboard shortcuts for focus sprint (Space = Play/Pause, R = Reset, S = Skip)
+  // Keyboard shortcuts (Space = Pause/Play, R = Reset, S = Skip)
   useEffect(() => {
     const handleTimerHotkeys = (e: KeyboardEvent) => {
       const activeTag = (document.activeElement?.tagName || '').toLowerCase();
-      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
-        return;
-      }
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') return;
 
       if (screenView === 'ACTIVE_TIMER') {
         if (e.code === 'Space') {
           e.preventDefault();
-          if (isActive) {
-            handlePause();
-          } else {
-            handleResume();
-          }
+          if (isActive) handlePause();
+          else handleResume();
         } else if (e.key.toLowerCase() === 'r') {
           e.preventDefault();
           handleReset();
         } else if (e.key.toLowerCase() === 's') {
           e.preventDefault();
           handleSkip();
+        } else if (e.key.toLowerCase() === 'f') {
+          e.preventDefault();
+          toggleFullScreen();
         }
       }
     };
@@ -347,30 +430,24 @@ export const FocusMode: React.FC = () => {
     return () => window.removeEventListener('keydown', handleTimerHotkeys);
   }, [screenView, isActive, remainingSeconds]);
 
-
-  // Copy Prompt to Clipboard
   const handleCopyPrompt = async () => {
     try {
       await navigator.clipboard.writeText(editablePrompt);
       setCopiedToast(true);
       setTimeout(() => setCopiedToast(false), 2800);
     } catch (err) {
-      console.error('Failed to copy prompt to clipboard:', err);
+      console.error('Failed to copy prompt:', err);
     }
   };
 
-  // Open External AI Chat
   const handleOpenAi = (url: string = 'https://chatgpt.com') => {
     if (window.electronAPI?.openExternal) {
       window.electronAPI.openExternal(url);
-    } else if (window.electronAPI?.openPath) {
-      window.electronAPI.openPath(url);
     } else {
       window.open(url, '_blank');
     }
   };
 
-  // Topic Status Assignment from Completion Modal
   const handleAssignTopicStatus = async (status: TopicStatus) => {
     if (currentSubject && currentModule && currentTopic) {
       await setTopicStatus(currentSubject.id, currentModule.id, currentTopic.id, status);
@@ -378,17 +455,113 @@ export const FocusMode: React.FC = () => {
     setShowCompletionModal(false);
   };
 
+  const handleSelectPreset = async (preset: SessionPreset) => {
+    await selectPreset(preset.id);
+    if (!isActive) {
+      setRemainingSeconds(preset.focusMinutes * 60);
+      setTotalSeconds(preset.focusMinutes * 60);
+    }
+  };
+
   const progressPct = totalSeconds > 0
     ? Math.round(((totalSeconds - remainingSeconds) / totalSeconds) * 100)
     : 0;
 
-  // Word count helper
   const wordCount = useMemo(() => {
     return editablePrompt.trim() ? editablePrompt.trim().split(/\s+/).length : 0;
   }, [editablePrompt]);
 
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col justify-between">
+    <div className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col justify-between relative">
+      {/* Distraction Alert Floating Banner */}
+      {distractionWarning && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 bg-app-warn text-black font-bold rounded-component shadow-2xl flex items-center gap-2 text-xs font-mono animate-bounce">
+          <AlertTriangle className="w-4 h-4" />
+          <span>{distractionWarning}</span>
+        </div>
+      )}
+
+      {/* Hidden webcam element for engagement monitoring */}
+      <video ref={videoRef} className="hidden" playsInline muted />
+
+      {/* Quick Presets Bar (Always available at top) */}
+      <div className="card-kopy p-3 flex flex-wrap items-center justify-between gap-2.5">
+        <div className="flex items-center gap-1.5 text-xs font-mono text-app-muted">
+          <Clock className="w-3.5 h-3.5 text-app-accent" />
+          <span className="font-bold text-app-ink">Study Rhythm:</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {presetsList.map((p) => {
+            const isSelected = p.id === currentPreset.id;
+            return (
+              <button
+                key={p.id}
+                onClick={() => handleSelectPreset(p)}
+                className={`px-3 py-1 rounded-component text-xs font-mono font-medium border transition-all ${
+                  isSelected
+                    ? 'bg-app-accent text-white border-app-accent shadow-sm font-bold'
+                    : 'bg-app-surface text-app-muted border-app-line hover:text-app-ink'
+                }`}
+              >
+                {p.name}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Ambient Soundscape selector & Fullscreen toggle */}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center space-x-1 bg-app-bg px-2 py-0.5 rounded-component border border-app-line text-xs font-mono">
+            <Volume2 className="w-3 h-3 text-app-accent" />
+            <select
+              value={soundscape}
+              onChange={(e) => setSoundscape(e.target.value as SoundscapeType)}
+              className="bg-transparent text-[11px] text-app-ink focus:outline-none cursor-pointer"
+            >
+              <option value="none">Audio: Silent</option>
+              <option value="whitenoise">White Noise</option>
+              <option value="rain">Rainfall</option>
+              <option value="binaural">Binaural 40Hz</option>
+            </select>
+          </div>
+
+          <button
+            onClick={() => setShieldActive(!shieldActive)}
+            className={`px-2 py-1 rounded-component border text-[11px] font-mono flex items-center gap-1 transition-colors ${
+              shieldActive
+                ? 'bg-app-live/15 text-app-live border-app-live/30'
+                : 'bg-app-bg text-app-muted border-app-line hover:text-app-ink'
+            }`}
+            title="Safe Non-Destructive Distraction Warning"
+          >
+            <ShieldCheck className="w-3 h-3" />
+            <span>Shield: {shieldActive ? 'ON' : 'OFF'}</span>
+          </button>
+
+          <button
+            onClick={() => setEngagementMonitor(!engagementMonitor)}
+            className={`px-2 py-1 rounded-component border text-[11px] font-mono flex items-center gap-1 transition-colors ${
+              engagementMonitor
+                ? 'bg-app-accent/15 text-app-accent border-app-accent/30'
+                : 'bg-app-bg text-app-muted border-app-line hover:text-app-ink'
+            }`}
+            title="Local Webcam Presence / Engagement Indicator (100% Offline)"
+          >
+            <Video className="w-3 h-3" />
+            <span>Monitor</span>
+          </button>
+
+          <button
+            onClick={() => toggleFullScreen()}
+            className="w-7 h-7 flex items-center justify-center rounded-component bg-app-bg hover:bg-app-hover border border-app-line text-app-muted hover:text-app-ink transition-colors"
+            title={isFullScreen ? 'Exit Full Screen (F)' : 'Full Screen (F)'}
+          >
+            {isFullScreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      </div>
+
       {/* ========================================================================= */}
       {/* 1. PREPARATION SCREEN (Topic-Aware AI Prompt Customizer & Launchpad) */}
       {/* ========================================================================= */}
@@ -405,17 +578,16 @@ export const FocusMode: React.FC = () => {
                 AI Study Prompt & Sprint Launchpad
               </h2>
               <p className="text-xs text-app-muted">
-                Review your topic curriculum, customize the exam-oriented prompt, and start your 30-minute study block.
+                Review your topic curriculum, customize the exam-oriented prompt, and start your {focusMin}-minute study block.
               </p>
             </div>
 
-            {/* Quick launch directly if timer already configured */}
             <button
               onClick={handleStartSession}
               className="flex items-center justify-center space-x-2 px-6 py-2.5 rounded-component bg-app-accent hover:opacity-90 text-white font-bold text-xs tracking-wide shadow-panel transition-all transform hover:-translate-y-0.5 shrink-0"
             >
               <Play className="w-4 h-4 fill-current" />
-              <span>START FOCUS SESSION</span>
+              <span>START FOCUS SESSION ({focusMin}M)</span>
             </button>
           </div>
 
@@ -449,7 +621,7 @@ export const FocusMode: React.FC = () => {
                   value={selectedSubjectId}
                   onChange={(e) => {
                     setSelectedSubjectId(e.target.value);
-                    const sub = data?.subjects.find(s => s.id === e.target.value);
+                    const sub = data?.subjects.find((s) => s.id === e.target.value);
                     if (sub && sub.modules.length > 0) {
                       setSelectedModuleId(sub.modules[0].id);
                       if (sub.modules[0].topics.length > 0) {
@@ -477,7 +649,7 @@ export const FocusMode: React.FC = () => {
                   value={selectedModuleId}
                   onChange={(e) => {
                     setSelectedModuleId(e.target.value);
-                    const mod = currentSubject?.modules.find(m => m.id === e.target.value);
+                    const mod = currentSubject?.modules.find((m) => m.id === e.target.value);
                     if (mod && mod.topics.length > 0) {
                       setSelectedTopicId(mod.topics[0].id);
                       setCustomTopicTitle(mod.topics[0].title);
@@ -502,7 +674,7 @@ export const FocusMode: React.FC = () => {
                   value={selectedTopicId}
                   onChange={(e) => {
                     setSelectedTopicId(e.target.value);
-                    const top = currentModule?.topics.find(t => t.id === e.target.value);
+                    const top = currentModule?.topics.find((t) => t.id === e.target.value);
                     if (top) setCustomTopicTitle(top.title);
                   }}
                   className="input-kopy w-full px-3 py-2 text-xs font-medium"
@@ -540,7 +712,6 @@ export const FocusMode: React.FC = () => {
                   </span>
                 </div>
 
-                {/* Subtopics Checklist Pills */}
                 {currentTopic.subtopics && currentTopic.subtopics.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {currentTopic.subtopics.map((sub, i) => (
@@ -577,7 +748,7 @@ export const FocusMode: React.FC = () => {
                     <button
                       key={goalKey}
                       type="button"
-                      onClick={() => setPromptOptions(prev => ({ ...prev, goal: goalKey }))}
+                      onClick={() => setPromptOptions((prev) => ({ ...prev, goal: goalKey }))}
                       className={`p-2.5 rounded-component border text-left transition-all ${
                         isSelected
                           ? 'bg-app-accent text-white border-app-accent shadow-panel ring-1 ring-app-accent'
@@ -606,7 +777,7 @@ export const FocusMode: React.FC = () => {
                     <button
                       key={len}
                       type="button"
-                      onClick={() => setPromptOptions(prev => ({ ...prev, length: len }))}
+                      onClick={() => setPromptOptions((prev) => ({ ...prev, length: len }))}
                       className={`py-1.5 px-3 rounded-component text-xs font-semibold text-center border transition-all ${
                         promptOptions.length === len
                           ? 'bg-app-accent text-white border-app-accent shadow-sm'
@@ -629,7 +800,7 @@ export const FocusMode: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={promptOptions.includeExamples}
-                      onChange={(e) => setPromptOptions(prev => ({ ...prev, includeExamples: e.target.checked }))}
+                      onChange={(e) => setPromptOptions((prev) => ({ ...prev, includeExamples: e.target.checked }))}
                       className="rounded text-app-accent focus:ring-app-accent"
                     />
                     <span>Examples & Cases</span>
@@ -639,7 +810,7 @@ export const FocusMode: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={promptOptions.includeFormulas}
-                      onChange={(e) => setPromptOptions(prev => ({ ...prev, includeFormulas: e.target.checked }))}
+                      onChange={(e) => setPromptOptions((prev) => ({ ...prev, includeFormulas: e.target.checked }))}
                       className="rounded text-app-accent focus:ring-app-accent"
                     />
                     <span>Key Formulas</span>
@@ -649,7 +820,7 @@ export const FocusMode: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={promptOptions.includeExamQuestions}
-                      onChange={(e) => setPromptOptions(prev => ({ ...prev, includeExamQuestions: e.target.checked }))}
+                      onChange={(e) => setPromptOptions((prev) => ({ ...prev, includeExamQuestions: e.target.checked }))}
                       className="rounded text-app-accent focus:ring-app-accent"
                     />
                     <span>Exam Q&A (KTU)</span>
@@ -659,7 +830,7 @@ export const FocusMode: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={promptOptions.includeScoringTips}
-                      onChange={(e) => setPromptOptions(prev => ({ ...prev, includeScoringTips: e.target.checked }))}
+                      onChange={(e) => setPromptOptions((prev) => ({ ...prev, includeScoringTips: e.target.checked }))}
                       className="rounded text-app-accent focus:ring-app-accent"
                     />
                     <span>Scoring Tips</span>
@@ -682,7 +853,6 @@ export const FocusMode: React.FC = () => {
                 </span>
               </div>
 
-              {/* Action Buttons: Copy, Open ChatGPT, Regenerate */}
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => {
@@ -700,9 +870,7 @@ export const FocusMode: React.FC = () => {
                 <button
                   onClick={handleCopyPrompt}
                   className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-component font-semibold text-xs transition-all shadow-sm ${
-                    copiedToast
-                      ? 'bg-app-live text-white'
-                      : 'bg-app-accent text-white hover:opacity-90'
+                    copiedToast ? 'bg-app-live text-white' : 'bg-app-accent text-white hover:opacity-90'
                   }`}
                   title="Copy Prompt to Clipboard"
                 >
@@ -712,18 +880,16 @@ export const FocusMode: React.FC = () => {
               </div>
             </div>
 
-            {/* Editable Prompt Textarea */}
             <div className="relative">
               <textarea
                 value={editablePrompt}
                 onChange={(e) => setEditablePrompt(e.target.value)}
-                rows={12}
+                rows={10}
                 className="w-full p-3.5 rounded-component border border-app-line text-xs font-mono leading-relaxed bg-app-surface text-app-ink focus:outline-none focus:ring-1 focus:ring-app-accent resize-y"
                 placeholder="AI Study Prompt will be generated here..."
               />
             </div>
 
-            {/* External AI Launch Bar & Start Session Button */}
             <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-mono text-app-muted">Open in AI:</span>
@@ -761,7 +927,6 @@ export const FocusMode: React.FC = () => {
                 </button>
               </div>
 
-              {/* Start Focus Session Primary CTA */}
               <button
                 onClick={handleStartSession}
                 className="flex items-center justify-center space-x-2 px-8 py-3 rounded-component bg-app-accent hover:opacity-90 text-white font-bold text-xs tracking-wide shadow-panel transition-all transform hover:-translate-y-0.5 active:translate-y-0"
@@ -774,7 +939,7 @@ export const FocusMode: React.FC = () => {
         </div>
       ) : (
         /* ========================================================================= */
-        /* 2. ACTIVE FOCUS SESSION SCREEN (30-Minute Sprint with Visible Topic)      */
+        /* 2. ACTIVE FOCUS SESSION SCREEN (Sprint Timer with Topic & Monitors)       */
         /* ========================================================================= */
         <div className="flex-1 flex flex-col items-center justify-between space-y-6 max-w-2xl mx-auto w-full animate-fade-in">
           {/* Top persistent Topic Card */}
@@ -795,6 +960,14 @@ export const FocusMode: React.FC = () => {
                 </span>
               </div>
 
+              {/* Engagement Status Badge */}
+              {engagementMonitor && (
+                <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-app-accent/15 border border-app-accent/30 text-app-accent text-[10px] font-mono">
+                  <span className="w-1.5 h-1.5 rounded-full bg-app-accent animate-ping"></span>
+                  <span>{engagementStatus === 'focused' ? 'ATTENTION ENGAGED' : 'MONITORING'}</span>
+                </div>
+              )}
+
               {/* View Study Prompt during session */}
               <button
                 onClick={() => setShowPromptModal(true)}
@@ -812,7 +985,6 @@ export const FocusMode: React.FC = () => {
               </h3>
             </div>
 
-            {/* Subtopics pill trail */}
             {currentTopic?.subtopics && currentTopic.subtopics.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {currentTopic.subtopics.map((sub, i) => (
@@ -827,7 +999,7 @@ export const FocusMode: React.FC = () => {
             )}
           </div>
 
-          {/* Mode Selector Tabs (Focus, Short Break, Long Break) */}
+          {/* Mode Selector Tabs */}
           <div className="flex items-center p-1.5 rounded-component bg-app-surface border border-app-line shadow-panel">
             <button
               onClick={() => switchMode('FOCUS')}
@@ -866,7 +1038,7 @@ export const FocusMode: React.FC = () => {
             </button>
           </div>
 
-          {/* Centerpiece: Circular Progress Countdown Timer */}
+          {/* Circular Countdown Timer */}
           <div className="relative my-2 flex flex-col items-center">
             <CircularProgress
               percentage={progressPct}
@@ -887,7 +1059,6 @@ export const FocusMode: React.FC = () => {
                   : 'rgba(139, 92, 246, 0.35)'
               }
             >
-              {/* Inner timer content */}
               <div className="text-center">
                 <span className="text-[11px] font-mono uppercase tracking-wider text-app-muted font-semibold">
                   {mode === 'FOCUS' ? 'FOCUS SPRINT' : mode === 'SHORT_BREAK' ? 'SHORT RECOVERY' : 'LONG RECOVERY'}
@@ -908,12 +1079,12 @@ export const FocusMode: React.FC = () => {
             </CircularProgress>
           </div>
 
-          {/* Main Timer Controls */}
+          {/* Timer Controls */}
           <div className="flex items-center space-x-3.5">
             <button
               onClick={handleReset}
               className="p-3.5 rounded-component bg-app-surface hover:bg-app-hover text-app-muted hover:text-app-ink border border-app-line transition-colors shadow-sm"
-              title="Reset Timer"
+              title="Reset Timer (R)"
             >
               <RotateCcw className="w-5 h-5" />
             </button>
@@ -924,7 +1095,7 @@ export const FocusMode: React.FC = () => {
                 className="flex items-center space-x-2 px-8 py-3.5 rounded-component bg-app-accent hover:opacity-90 text-white font-bold text-sm tracking-wide shadow-panel transition-all transform hover:-translate-y-0.5 active:translate-y-0"
               >
                 <Play className="w-5 h-5 fill-current" />
-                <span>RESUME SPRINT</span>
+                <span>RESUME SPRINT (SPACE)</span>
               </button>
             ) : (
               <button
@@ -932,14 +1103,14 @@ export const FocusMode: React.FC = () => {
                 className="flex items-center space-x-2 px-8 py-3.5 rounded-component bg-app-warn hover:opacity-90 text-white font-bold text-sm tracking-wide shadow-panel transition-all"
               >
                 <Pause className="w-5 h-5 fill-current" />
-                <span>PAUSE TIMER</span>
+                <span>PAUSE TIMER (SPACE)</span>
               </button>
             )}
 
             <button
               onClick={handleSkip}
               className="p-3.5 rounded-component bg-app-surface hover:bg-app-hover text-app-muted hover:text-app-ink border border-app-line transition-colors shadow-sm"
-              title="Skip Interval"
+              title="Skip Interval (S)"
             >
               <SkipForward className="w-5 h-5" />
             </button>
@@ -963,9 +1134,7 @@ export const FocusMode: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 3. MODAL: VIEW PROMPT DURING ACTIVE SESSION                               */}
-      {/* ========================================================================= */}
+      {/* 3. MODAL: VIEW PROMPT DURING ACTIVE SESSION */}
       {showPromptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="w-full max-w-2xl bg-app-surface border border-app-line rounded-card shadow-panel overflow-hidden flex flex-col max-h-[85vh]">
@@ -1028,9 +1197,7 @@ export const FocusMode: React.FC = () => {
         </div>
       )}
 
-      {/* ========================================================================= */}
-      {/* 4. MODAL: POST-SESSION TOPIC STATUS TRACKER                               */}
-      {/* ========================================================================= */}
+      {/* 4. MODAL: POST-SESSION TOPIC STATUS TRACKER */}
       {showCompletionModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
           <div className="w-full max-w-md bg-app-surface border border-app-line rounded-card shadow-panel p-6 space-y-4">
@@ -1042,7 +1209,7 @@ export const FocusMode: React.FC = () => {
                 Focus Sprint Completed!
               </h3>
               <p className="text-xs text-app-muted">
-                30 minutes logged for <strong className="text-app-ink">{currentTopic?.title || 'Study Topic'}</strong>.
+                {focusMin} minutes logged for <strong className="text-app-ink">{currentTopic?.title || 'Study Topic'}</strong>.
               </p>
             </div>
 
@@ -1051,7 +1218,6 @@ export const FocusMode: React.FC = () => {
               <div className="text-app-accent font-semibold">How would you like to update this topic's syllabus status?</div>
             </div>
 
-            {/* Options to update status: Does not automatically mark completed! */}
             <div className="space-y-2 pt-1">
               <button
                 onClick={() => handleAssignTopicStatus('COMPLETED')}

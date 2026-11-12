@@ -3,16 +3,18 @@ import { AppProvider, useApp } from './context/AppContext';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
+import { OnboardingModal } from './components/OnboardingModal';
 import { Dashboard } from './pages/Dashboard';
 import { StudyPlanner } from './pages/StudyPlanner';
 import { ExamCountdown } from './pages/ExamCountdown';
 import { FocusMode } from './pages/FocusMode';
 import { SessionHistory } from './pages/SessionHistory';
 import { Settings } from './pages/Settings';
+import { AboutPage } from './pages/AboutPage';
 import { Timer } from 'lucide-react';
 
 const AppContent: React.FC = () => {
-  const { activeTab, loading } = useApp();
+  const { activeTab, loading, showOnboarding, setShowOnboarding } = useApp();
 
   if (loading) {
     return (
@@ -41,6 +43,8 @@ const AppContent: React.FC = () => {
         return <SessionHistory />;
       case 'settings':
         return <Settings />;
+      case 'about':
+        return <AboutPage />;
       default:
         return <Dashboard />;
     }
@@ -61,6 +65,12 @@ const AppContent: React.FC = () => {
 
       {/* Global Command Palette (Ctrl+K) */}
       <CommandPalette />
+
+      {/* First-Launch Onboarding Modal */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => setShowOnboarding(false)}
+      />
     </div>
   );
 };

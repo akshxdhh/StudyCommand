@@ -8,8 +8,48 @@ import {
   TimetableSlot,
   DailySessionRecord,
   AppSettings,
-  Topic
+  Topic,
+  UserProfile,
+  SessionPreset,
+  FocusV3Settings,
+  OnboardingState,
+  SupportedLanguage
 } from './types';
+
+export const DEFAULT_PROFILES: UserProfile[] = [
+  {
+    id: 'profile-default',
+    name: 'Commander',
+    avatar: '⚡',
+    majorOrCourse: 'Computer Science (KTU S5)',
+    targetExamDate: '2026-11-23',
+    dailyGoalHours: 6,
+    language: 'en',
+    createdAt: new Date().toISOString(),
+  },
+];
+
+export const DEFAULT_PRESETS: SessionPreset[] = [
+  { id: 'preset-pomodoro', name: 'Pomodoro (25/5)', focusMinutes: 25, breakMinutes: 5 },
+  { id: 'preset-sprint', name: 'Sprint (30/5)', focusMinutes: 30, breakMinutes: 5 },
+  { id: 'preset-lecture', name: 'Lecture Block (45/10)', focusMinutes: 45, breakMinutes: 10 },
+  { id: 'preset-deep', name: 'Extended Focus (50/10)', focusMinutes: 50, breakMinutes: 10 },
+  { id: 'preset-ultradeep', name: 'Deep Work (60/15)', focusMinutes: 60, breakMinutes: 15 },
+  { id: 'preset-custom', name: 'Custom Preset', focusMinutes: 30, breakMinutes: 5, isCustom: true },
+];
+
+export const DEFAULT_FOCUS_V3: FocusV3Settings = {
+  fullscreenOnStart: false,
+  distractionShield: true,
+  engagementMonitor: false,
+  soundscape: 'none',
+  voiceAssistantEnabled: true,
+};
+
+export const DEFAULT_ONBOARDING: OnboardingState = {
+  completed: false,
+  step: 0,
+};
 
 export const DEFAULT_APPEARANCE = {
   themeMode: 'dark' as const,
@@ -1160,6 +1200,16 @@ export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'purple',
   appearance: { ...DEFAULT_APPEARANCE },
   minimizeToTrayOnClose: true,
+
+  // V3 Defaults:
+  language: 'en',
+  activeProfileId: 'profile-default',
+  profiles: JSON.parse(JSON.stringify(DEFAULT_PROFILES)),
+  activePresetId: 'preset-pomodoro',
+  presets: JSON.parse(JSON.stringify(DEFAULT_PRESETS)),
+  focusV3: { ...DEFAULT_FOCUS_V3 },
+  onboarding: { ...DEFAULT_ONBOARDING },
+  sidebarCollapsed: false,
 };
 
 export class StoreManager {
@@ -1195,7 +1245,7 @@ export class StoreManager {
   public resetToDefaults(): AppDataStore {
     const today = this.getTodayDateString();
     this.data = {
-      version: 2,
+      version: 3,
       subjects: JSON.parse(JSON.stringify(DEFAULT_SUBJECTS)),
       exams: JSON.parse(JSON.stringify(DEFAULT_EXAMS)),
       timetable: JSON.parse(JSON.stringify(DEFAULT_TIMETABLE)),
@@ -1248,21 +1298,53 @@ export class StoreManager {
       try {
         const raw = fs.readFileSync(this.filePath, 'utf-8');
         const parsed = JSON.parse(raw);
-        // Auto-migrate to version 2 (full syllabus integration & appearance settings)
+        // Auto-migrate to version 3 (Profiles, Presets, Focus V3, i18n, Onboarding)
+        const version = 3;
+        const subjects = parsed.subjects && parsed.subjects.length > 0 ? parsed.subjects : DEFAULT_SUBJECTS;
+        const exams = parsed.exams && parsed.exams.length > 0 ? parsed.exams : DEFAULT_EXAMS;
+        const timetable = parsed.timetable || DEFAULT_TIMETABLE;
+        const dailyRecords = parsed.dailyRecords || {};
+        const focusLogs = parsed.focusLogs || [];
+
+        const loadedSettings = parsed.settings || {};
+        const profiles = loadedSettings.profiles && loadedSettings.profiles.length > 0
+          ? loadedSettings.profiles
+          : JSON.parse(JSON.stringify(DEFAULT_PROFILES));
+        const activeProfileId = loadedSettings.activeProfileId || profiles[0]?.id || 'profile-default';
+        const presets = loadedSettings.presets && loadedSettings.presets.length > 0
+          ? loadedSettings.presets
+          : JSON.parse(JSON.stringify(DEFAULT_PRESETS));
+        const activePresetId = loadedSettings.activePresetId || presets[0]?.id || 'preset-pomodoro';
+
         return {
-          version: 2,
-          subjects: parsed.version && parsed.version >= 2 ? parsed.subjects : DEFAULT_SUBJECTS,
-          exams: parsed.version && parsed.version >= 2 ? parsed.exams : DEFAULT_EXAMS,
-          timetable: parsed.timetable || DEFAULT_TIMETABLE,
-          dailyRecords: parsed.dailyRecords || {},
-          focusLogs: parsed.focusLogs || [],
+          version,
+          subjects,
+          exams,
+          timetable,
+          dailyRecords,
+          focusLogs,
           settings: {
             ...DEFAULT_SETTINGS,
-            ...(parsed.settings || {}),
+            ...loadedSettings,
+            language: loadedSettings.language || 'en',
+            activeProfileId,
+            profiles,
+            activePresetId,
+            presets,
+            focusV3: {
+              ...DEFAULT_FOCUS_V3,
+              ...(loadedSettings.focusV3 || {}),
+            },
+            onboarding: {
+              ...DEFAULT_ONBOARDING,
+              completed: parsed.version && parsed.version >= 2 ? true : (loadedSettings.onboarding?.completed ?? false),
+              ...(loadedSettings.onboarding || {}),
+            },
+            sidebarCollapsed: loadedSettings.sidebarCollapsed ?? false,
             appearance: {
               ...DEFAULT_APPEARANCE,
-              ...(parsed.settings?.appearance || {})
-            }
+              ...(loadedSettings.appearance || {}),
+            },
           },
           lastActiveDate: parsed.lastActiveDate || this.getTodayDateString(),
         };
@@ -1276,7 +1358,7 @@ export class StoreManager {
   private createDefaultStore(): AppDataStore {
     const today = this.getTodayDateString();
     const newStore: AppDataStore = {
-      version: 2,
+      version: 3,
       subjects: JSON.parse(JSON.stringify(DEFAULT_SUBJECTS)),
       exams: JSON.parse(JSON.stringify(DEFAULT_EXAMS)),
       timetable: JSON.parse(JSON.stringify(DEFAULT_TIMETABLE)),

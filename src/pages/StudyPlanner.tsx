@@ -15,11 +15,13 @@ import {
   Sparkles,
   Bookmark,
   Check,
-  X
+  X,
+  Upload
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { Priority, TopicStatus, Topic } from '../types';
 import { SyllabusReferenceModal } from '../components/SyllabusReferenceModal';
+import { PdfImportModal } from '../components/PdfImportModal';
 import { SYLLABUS_METADATA } from '../data/syllabusMetadata';
 
 export const StudyPlanner: React.FC = () => {
@@ -56,6 +58,7 @@ export const StudyPlanner: React.FC = () => {
 
   // PDF Syllabus modal
   const [syllabusModalSubjectId, setSyllabusModalSubjectId] = useState<string | null>(null);
+  const [isPdfImportOpen, setIsPdfImportOpen] = useState<boolean>(false);
 
   if (!data) return null;
 
@@ -159,19 +162,30 @@ export const StudyPlanner: React.FC = () => {
           </p>
         </div>
 
-        {/* Overall progress indicator */}
-        <div className="flex items-center space-x-4 card-kopy px-4 py-2.5">
-          <div>
-            <div className="text-[10px] font-mono uppercase text-app-muted">OVERALL PROGRESS</div>
-            <div className="text-base font-bold text-app-accent font-mono">
-              {overallProgress}% <span className="text-xs text-app-muted font-normal">({overallCompleted}/{overallTotal})</span>
+        {/* Actions & Overall progress */}
+        <div className="flex items-center space-x-3">
+          <button
+            onClick={() => setIsPdfImportOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-2 bg-app-accent/15 hover:bg-app-accent/25 border border-app-accent/30 text-app-accent rounded-component text-xs font-semibold shadow-panel transition-all"
+            title="Import Syllabus or Timetable from PDF"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            <span>Upload PDF Syllabus</span>
+          </button>
+
+          <div className="flex items-center space-x-4 card-kopy px-4 py-2.5">
+            <div>
+              <div className="text-[10px] font-mono uppercase text-app-muted">OVERALL PROGRESS</div>
+              <div className="text-base font-bold text-app-accent font-mono">
+                {overallProgress}% <span className="text-xs text-app-muted font-normal">({overallCompleted}/{overallTotal})</span>
+              </div>
             </div>
-          </div>
-          <div className="w-24 bg-app-bg rounded-full h-2 overflow-hidden border border-app-line">
-            <div
-              className="bg-app-accent h-2 rounded-full transition-all duration-500 shadow-panel"
-              style={{ width: `${overallProgress}%` }}
-            ></div>
+            <div className="w-24 bg-app-bg rounded-full h-2 overflow-hidden border border-app-line">
+              <div
+                className="bg-app-accent h-2 rounded-full transition-all duration-500 shadow-panel"
+                style={{ width: `${overallProgress}%` }}
+              ></div>
+            </div>
           </div>
         </div>
       </div>
@@ -664,6 +678,12 @@ export const StudyPlanner: React.FC = () => {
         subjectId={syllabusModalSubjectId}
         isOpen={!!syllabusModalSubjectId}
         onClose={() => setSyllabusModalSubjectId(null)}
+      />
+
+      {/* PDF Import Modal */}
+      <PdfImportModal
+        isOpen={isPdfImportOpen}
+        onClose={() => setIsPdfImportOpen(false)}
       />
     </div>
   );

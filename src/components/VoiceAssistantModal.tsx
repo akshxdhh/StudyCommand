@@ -26,11 +26,13 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({ isOpen
     isListening: boolean;
     isSpeaking: boolean;
     transcript: string;
+    audioLevel?: number;
     error?: string;
   }>({
     isListening: false,
     isSpeaking: false,
     transcript: '',
+    audioLevel: 0,
   });
 
   const [lastCommand, setLastCommand] = useState<string>('');
@@ -168,22 +170,29 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({ isOpen
           </div>
 
           {/* Waveform indicator */}
-          <div className="flex items-center space-x-1.5 h-6 mb-2">
-            {[1, 2, 3, 4, 5, 6, 7].map((bar) => (
-              <div
-                key={bar}
-                className={`w-1 rounded-full transition-all duration-150 ${
-                  status.isListening ? 'bg-app-accent' : 'bg-app-line h-1'
-                }`}
-                style={{
-                  height: status.isListening ? `${Math.sin(bar * 0.9) * 12 + 12}px` : '4px',
-                }}
-              />
-            ))}
+          <div className="flex items-center space-x-1.5 h-7 mb-2">
+            {[1, 2, 3, 4, 5, 6, 7].map((bar) => {
+              const baseHeight = status.isListening
+                ? Math.max(4, Math.min(26, ((status.audioLevel || 15) / 100) * 22 + Math.sin(bar * 0.9 + Date.now() / 200) * 6 + 6))
+                : 4;
+              return (
+                <div
+                  key={bar}
+                  className={`w-1.5 rounded-full transition-all duration-100 ${
+                    status.isListening ? 'bg-app-accent' : 'bg-app-line h-1'
+                  }`}
+                  style={{
+                    height: `${baseHeight}px`,
+                  }}
+                />
+              );
+            })}
           </div>
 
           <p className="text-xs font-mono font-medium text-app-ink">
-            {status.isListening ? 'Listening for voice commands...' : 'Microphone Paused (Click to speak or type below)'}
+            {status.isListening
+              ? `Microphone Active & Listening... (Level: ${status.audioLevel || 0}%)`
+              : 'Microphone Paused (Click to speak or type below)'}
           </p>
 
           {status.transcript && (
@@ -202,7 +211,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({ isOpen
           {status.error && (
             <div className="mt-2 px-3 py-1.5 rounded-component bg-app-danger/10 border border-app-danger/30 text-[11px] text-app-danger font-mono flex items-center gap-1.5">
               <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-              <span>Mic recognition offline: use text input below.</span>
+              <span>{status.error}</span>
             </div>
           )}
         </div>
@@ -232,16 +241,17 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({ isOpen
         <div className="p-4 bg-app-bg/50">
           <div className="flex items-center gap-1.5 text-xs font-bold text-app-ink mb-2">
             <HelpCircle className="w-3.5 h-3.5 text-app-accent" />
-            <span>Supported Voice & Text Queries</span>
+            <span>Supported Voice & Quick Commands (Click to test)</span>
           </div>
           <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
             {sampleCommands.map((c, i) => (
               <div
                 key={i}
                 onClick={() => {
-                  setTypedInput(c.voice.replace(/["']/g, ''));
+                  const match = voiceAssistant.processQuery(c.voice.replace(/["']/g, ''), assistantContext);
+                  handleAction(match);
                 }}
-                className="flex items-center justify-between p-2 rounded-component bg-app-surface border border-app-line text-xs font-mono cursor-pointer hover:border-app-accent/40 transition-colors"
+                className="flex items-center justify-between p-2 rounded-component bg-app-surface border border-app-line text-xs font-mono cursor-pointer hover:border-app-accent/40 hover:bg-app-accent/5 transition-all"
               >
                 <span className="text-app-accent font-semibold">{c.voice}</span>
                 <span className="text-app-muted text-[11px]">{c.desc}</span>

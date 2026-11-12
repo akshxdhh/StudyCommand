@@ -388,12 +388,40 @@ function setupIPC(): void {
         return { success: false, error: `File not found: ${filePath}` };
       }
       const pdfBuffer = fs.readFileSync(filePath);
-      const pdfParse = require('pdf-parse');
-      const parsed = await pdfParse(pdfBuffer);
+      const pdfParseModule = require('pdf-parse');
+
+      let text = '';
+      let numpages = 1;
+
+      if (pdfParseModule && pdfParseModule.PDFParse) {
+        // pdf-parse v2+
+        const parser = new pdfParseModule.PDFParse({ data: pdfBuffer });
+        try {
+          const textResult = await parser.getText();
+          text = textResult.text || '';
+          numpages = textResult.total || (textResult.pages ? textResult.pages.length : 1);
+        } finally {
+          try {
+            await parser.destroy();
+          } catch {}
+        }
+      } else if (typeof pdfParseModule === 'function') {
+        // pdf-parse v1
+        const parsed = await pdfParseModule(pdfBuffer);
+        text = parsed.text || '';
+        numpages = parsed.numpages || 1;
+      } else if (pdfParseModule && pdfParseModule.default && typeof pdfParseModule.default === 'function') {
+        const parsed = await pdfParseModule.default(pdfBuffer);
+        text = parsed.text || '';
+        numpages = parsed.numpages || 1;
+      } else {
+        throw new Error('Unsupported pdf-parse export structure');
+      }
+
       return {
         success: true,
-        text: parsed.text,
-        numpages: parsed.numpages,
+        text,
+        numpages,
         filename: path.basename(filePath),
       };
     } catch (err: any) {
@@ -499,15 +527,19 @@ app.on('second-instance', () => {
 app.whenReady().then(() => {
   // Configure Media Permissions (Webcam & Microphone for Voice Assistant & Engagement Monitor)
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-    if (permission === 'media') {
-      callback(true);
-    } else {
-      callback(true);
-    }
+    const allowed = [
+      'media',
+      'microphone',
+      'camera',
+      'audioCapture',
+      'videoCapture',
+      'speech-recognition',
+      'notifications',
+    ];
+    callback(allowed.includes(permission) || true);
   });
 
-  session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-    if (permission === 'media') return true;
+  session.defaultSession.setPermissionCheckHandler((_webContents, _permission) => {
     return true;
   });
 

@@ -115,6 +115,7 @@ export const FocusMode: React.FC = () => {
   const [shieldActive, setShieldActive] = useState<boolean>(true);
   const [distractionWarning, setDistractionWarning] = useState<string | null>(null);
   const [engagementMonitorEnabled, setEngagementMonitorEnabled] = useState<boolean>(false);
+  const [showCameraPreview, setShowCameraPreview] = useState<boolean>(false);
   const [engagementState, setEngagementState] = useState<EngagementState>('idle');
   const [engagementMsg, setEngagementMsg] = useState<string>('');
 
@@ -466,8 +467,33 @@ export const FocusMode: React.FC = () => {
         </div>
       )}
 
-      {/* Hidden webcam element for engagement monitoring */}
-      <video ref={videoRef} className="hidden" playsInline muted />
+      {/* Webcam element for engagement monitoring & optional live PIP preview */}
+      {engagementMonitorEnabled && showCameraPreview ? (
+        <div className="fixed bottom-6 right-6 z-40 bg-app-surface border border-app-line rounded-card shadow-2xl p-2 flex flex-col items-center animate-in fade-in">
+          <div className="flex items-center justify-between w-full mb-1.5 px-1">
+            <span className="text-[10px] font-mono text-app-muted">Presence Camera</span>
+            <button
+              onClick={() => setShowCameraPreview(false)}
+              className="text-[10px] text-app-muted hover:text-app-ink"
+            >
+              ✕
+            </button>
+          </div>
+          <video
+            ref={videoRef}
+            playsInline
+            muted
+            className="w-32 h-24 object-cover rounded-component border border-app-line bg-black"
+          />
+        </div>
+      ) : (
+        <video
+          ref={videoRef}
+          playsInline
+          muted
+          style={{ position: 'fixed', top: -9999, left: -9999, width: 160, height: 120, opacity: 0, pointerEvents: 'none' }}
+        />
+      )}
 
       {/* Quick Presets Bar (Always available at top) */}
       <div className="card-kopy p-3 flex flex-wrap items-center justify-between gap-2.5">
@@ -525,7 +551,11 @@ export const FocusMode: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setEngagementMonitorEnabled(!engagementMonitorEnabled)}
+            onClick={() => {
+              const next = !engagementMonitorEnabled;
+              setEngagementMonitorEnabled(next);
+              if (!next) setShowCameraPreview(false);
+            }}
             className={`px-2 py-1 rounded-component border text-[11px] font-mono flex items-center gap-1 transition-colors ${
               engagementMonitorEnabled
                 ? 'bg-app-accent/15 text-app-accent border-app-accent/30'
@@ -536,6 +566,20 @@ export const FocusMode: React.FC = () => {
             <Video className="w-3 h-3" />
             <span>Camera Monitor: {engagementMonitorEnabled ? 'ON' : 'OFF'}</span>
           </button>
+
+          {engagementMonitorEnabled && (
+            <button
+              onClick={() => setShowCameraPreview(!showCameraPreview)}
+              className={`px-2 py-1 rounded-component border text-[11px] font-mono flex items-center gap-1 transition-colors ${
+                showCameraPreview
+                  ? 'bg-app-accent/20 text-app-accent border-app-accent/40 font-bold'
+                  : 'bg-app-bg text-app-muted border-app-line hover:text-app-ink'
+              }`}
+              title="Toggle Live Webcam Preview PIP"
+            >
+              <span>{showCameraPreview ? 'Hide Cam' : 'Preview Cam'}</span>
+            </button>
+          )}
 
           <button
             onClick={() => toggleFullScreen()}

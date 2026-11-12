@@ -37,9 +37,14 @@ export class VoiceAssistant {
   private recognition: any = null;
   private isListening: boolean = false;
   private isSpeaking: boolean = false;
+  private audioStream: MediaStream | null = null;
+  private audioContext: any = null;
+  private analyser: any = null;
+  private audioMeterInterval: any = null;
+  private audioLevel: number = 0;
   private context: AssistantContext = {};
   private onCommandCallback: ((cmd: VoiceCommandMatch) => void) | null = null;
-  private onStatusChangeCallback: ((status: { isListening: boolean; isSpeaking: boolean; transcript: string; error?: string }) => void) | null = null;
+  private onStatusChangeCallback: ((status: { isListening: boolean; isSpeaking: boolean; transcript: string; audioLevel?: number; error?: string }) => void) | null = null;
 
   constructor() {
     this.initRecognition();
@@ -71,14 +76,26 @@ export class VoiceAssistant {
         };
 
         this.recognition.onerror = (event: any) => {
-          console.warn('Voice Assistant Error:', event.error);
-          this.isListening = false;
-          this.notifyStatus('', event.error);
+          console.debug('SpeechRecognition info:', event.error);
+          // If offline or network unavailable, do not shut off the microphone stream
+          if (event.error === 'network' || event.error === 'no-speech') {
+            return;
+          }
+          if (!this.audioStream) {
+            this.isListening = false;
+            this.notifyStatus('', event.error);
+          }
         };
 
         this.recognition.onend = () => {
-          this.isListening = false;
-          this.notifyStatus('');
+          if (this.isListening && this.audioStream) {
+            try {
+              this.recognition?.start();
+            } catch {}
+          } else {
+            this.isListening = false;
+            this.notifyStatus('');
+          }
         };
       } catch (err) {
         console.warn('SpeechRecognition initialization error:', err);
@@ -88,39 +105,109 @@ export class VoiceAssistant {
 
   public isSupported(): boolean {
     return Boolean(
-      (window as any).SpeechRecognition ||
-      (window as any).webkitSpeechRecognition ||
-      window.speechSynthesis
+      (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) ||
+      (typeof window !== 'undefined' && ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition || window.speechSynthesis))
     );
   }
 
-  public startListening(onCommand: (cmd: VoiceCommandMatch) => void, onStatusChange: (status: any) => void) {
+  public async startListening(
+    onCommand: (cmd: VoiceCommandMatch) => void,
+    onStatusChange: (status: { isListening: boolean; isSpeaking: boolean; transcript: string; audioLevel?: number; error?: string }) => void
+  ) {
     this.onCommandCallback = onCommand;
     this.onStatusChangeCallback = onStatusChange;
 
+    // 1. Acquire genuine microphone hardware stream
+    if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      try {
+        this.audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+
+        // Set up real-time audio volume visualizer
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          this.audioContext = new AudioCtx();
+          const source = this.audioContext.createMediaStreamSource(this.audioStream);
+          this.analyser = this.audioContext.createAnalyser();
+          this.analyser.fftSize = 64;
+          source.connect(this.analyser);
+
+          const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+          this.audioMeterInterval = setInterval(() => {
+            if (!this.analyser) return;
+            this.analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) {
+              sum += dataArray[i];
+            }
+            const avg = sum / dataArray.length;
+            this.audioLevel = Math.min(100, Math.round((avg / 128) * 100));
+            this.notifyStatus(this.isListening ? 'Microphone Active & Listening...' : '');
+          }, 120);
+        }
+
+        this.isListening = true;
+        this.notifyStatus('Microphone Active & Listening...');
+      } catch (err: any) {
+        console.warn('Microphone getUserMedia failed:', err);
+        const errMsg = err?.name === 'NotAllowedError'
+          ? 'Microphone permission was denied in Windows Settings.'
+          : 'Microphone hardware unavailable or busy.';
+        this.notifyStatus('', errMsg);
+        return;
+      }
+    }
+
+    // 2. Also start speech recognition if available
     if (!this.recognition) {
       this.initRecognition();
     }
-
-    if (this.recognition && !this.isListening) {
+    if (this.recognition) {
       try {
         this.recognition.start();
-        this.isListening = true;
-        this.notifyStatus('Listening for voice commands...');
       } catch (err) {
-        console.warn('Recognition start failed:', err);
+        console.debug('Recognition start note:', err);
       }
     }
   }
 
   public stopListening() {
-    if (this.recognition && this.isListening) {
+    if (this.audioMeterInterval) {
+      clearInterval(this.audioMeterInterval);
+      this.audioMeterInterval = null;
+    }
+
+    if (this.audioStream) {
+      this.audioStream.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {}
+      });
+      this.audioStream = null;
+    }
+
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch {}
+      this.audioContext = null;
+      this.analyser = null;
+    }
+
+    if (this.recognition) {
       try {
         this.recognition.stop();
       } catch {}
-      this.isListening = false;
-      this.notifyStatus('Voice Assistant idle');
     }
+
+    this.isListening = false;
+    this.audioLevel = 0;
+    this.notifyStatus('');
   }
 
   public toggle(onCommand: (cmd: VoiceCommandMatch) => void, onStatusChange: (status: any) => void) {
@@ -233,6 +320,7 @@ export class VoiceAssistant {
       isListening: this.isListening,
       isSpeaking: this.isSpeaking,
       transcript,
+      audioLevel: this.audioLevel,
       error,
     });
   }

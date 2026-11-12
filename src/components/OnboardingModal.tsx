@@ -117,24 +117,34 @@ export const OnboardingModal: React.FC<OnboardingModalProps> = ({ isOpen, onClos
     }
   };
 
-  const handleTestMic = () => {
+  const handleTestMic = async () => {
     try {
-      const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const rec = new SpeechRecognition();
-        rec.start();
-        rec.onstart = () => {
-          setMicTested(true);
-          rec.stop();
-        };
-        rec.onerror = () => {
-          setMicTested(true);
-        };
+      if (typeof navigator !== 'undefined' && navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        setMicTested(true);
+        // Play brief tone to confirm audio pipeline
+        const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+          gain.gain.setValueAtTime(0.08, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.25);
+          setTimeout(() => ctx.close().catch(() => {}), 350);
+        }
+        stream.getTracks().forEach((t) => t.stop());
       } else {
         setMicTested(true);
       }
-    } catch {
-      setMicTested(true);
+    } catch (err: any) {
+      console.warn('Mic verification error:', err);
+      alert('Microphone permission was denied or device not found. Please allow microphone access in Windows Settings.');
     }
   };
 

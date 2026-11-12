@@ -36,7 +36,7 @@ export const Header: React.FC = () => {
         <span className="text-xs font-bold tracking-wider text-app-ink font-sans flex items-center gap-1.5">
           STUDY <span className="text-app-accent">COMMAND</span>
           <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-app-accent/10 border border-app-accent/25 text-app-accent font-mono font-normal">
-            v2.1
+            v2.0.0
           </span>
         </span>
       </div>
@@ -78,14 +78,16 @@ export const Header: React.FC = () => {
           <span className="hidden sm:inline">Start Focus</span>
         </button>
 
-        <button
-          onClick={() => testNotification()}
-          className="flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded-component bg-app-bg hover:bg-app-hover text-app-muted hover:text-app-ink border border-app-line transition-all"
-          title="Test Windows Desktop Notification"
-        >
-          <Bell className="w-3 h-3 text-app-accent" />
-          <span className="hidden sm:inline">Test Alert</span>
-        </button>
+        {import.meta.env.DEV && (
+          <button
+            onClick={() => testNotification()}
+            className="flex items-center space-x-1.5 text-xs px-2.5 py-1 rounded-component bg-app-bg hover:bg-app-hover text-app-muted hover:text-app-ink border border-app-line transition-all"
+            title="Test Windows Desktop Notification (Dev Only)"
+          >
+            <Bell className="w-3 h-3 text-app-accent" />
+            <span className="hidden sm:inline">Test Alert</span>
+          </button>
+        )}
 
         {/* Window controls */}
         <div className="flex items-center ml-1.5 border-l border-app-line pl-1.5 space-x-1">

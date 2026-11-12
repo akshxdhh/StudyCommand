@@ -1,6 +1,6 @@
 {
   "name": "study-command",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Personal Exam Preparation and Study Accountability Command Center",
   "main": "dist-electron/main.js",
   "author": "STUDY COMMAND Team",
@@ -48,6 +48,7 @@
   "build": {
     "appId": "com.studycommand.app",
     "productName": "STUDY COMMAND",
+    "artifactName": "Study-Command-v${version}-Setup.${ext}",
     "directories": {
       "output": "release"
     },
